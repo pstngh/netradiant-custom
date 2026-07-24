@@ -416,7 +416,688 @@ This creates an object which gradually sinks downward when stepped on.
 "notactive" - make the sink object not active
 
 FALLAWAY - the sink object will progressively fall down faster and faster
-NO_RESET - the…8006 tokens truncated… 0) ? NO_INTERMISSION x NOT_PLAYERS MONSTERS PROJECTILES
+NO_RESET - the sink object will not reset, only move downward
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/spawners.cpp
+/*QUAKED func_spawn (0 0.25 0.5) (-8 -8 -8) (8 8 8)
+"modelname" The name of the TIKI file you wish to spawn. (Required)
+"spawntargetname" This will be the targetname of the spawned model. (default is null)
+"spawntarget" This will be the target of the spawned model. (default is null)
+"pickup_thread" passed on to the spawned model
+"key"       The item needed to activate this. (default nothing)
+"attackmode" Attacking mode of the spawned actor (default 0)
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/spawners.cpp
+/*QUAKED func_spawnchain (0 0.25 0.5) (-8 -8 -8) (8 8 8)
+Tries to spawn something out of the sight of players.  If it fails, it will
+trigger its targets.
+"modelname"   The name of the TIKI file you wish to spawn. (Required)
+"spawntargetname" This will be the targetname of the spawned model. (default is null)
+"spawntarget" This will be the target of the spawned model. (default is null)
+"key"         The item needed to activate this. (default nothing)
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/spawners.cpp
+/*QUAKED func_spawnoutofsight (0 0.25 0.5) (-8 -8 -8) (8 8 8)
+Will only spawn something out of sight of its targets.
+"modelname"   The name of the TIKI file you wish to spawn. (Required)
+"spawntargetname" This will be the targetname of the spawned model. (default is null)
+"spawntarget" This will be the target of the spawned model. (default is null)
+"key"         The item needed to activate this. (default nothing)
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/misc.cpp
+/*QUAKED func_teleportdest (0 0.25 0.5) (-32 -32 0) (32 32 8)
+
+Point trigger_teleport at these.
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/object.cpp
+/*QUAKED func_throwobject (0 0.25 0.5) (-16 -16 0) (16 16 32)
+
+This is an object you can pickup and throw at people
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/Tow_Entities.cpp
+/*QUAKED func_TOWObjective (1.0 0.0 1.0) (-12 -12 -12) (12 12 12) StartOn Respawner
+
+  This object is an extension of the standard objective object.  It is used for Tug of War
+  Maps.
+
+  object used to simplify placing objectives.  You may optionally connect this object to the
+  target you want to use for the compass position....
+
+  Checkboxes:
+	StartOn - check this if you want this objective to be displayed when the level first loads
+
+	Respawner - check this if the objective is the respawn point for a team.  If you set this
+	you must set ControlledBy to a valid team and not Neutral.
+
+
+  Parameters:
+  ControlledBy			0 = Axis, 1 = Allies, 2 = Neutral
+  AxisObjNum			1 - 5.  Set the objective number for the axis.  This will associate the objective with
+						the check box for the corresponding text in the score screen.
+  AlliesObjNum			1 - 5.  Set the objective number for the allies.  This will associate the objective with
+						the check box for the corresponding text in the score screen.
+
+  ObjectiveNbr			<nObjNbr=0>	Please ignore this for now.
+
+  Events:
+	TurnOn
+	TurnOff
+	Complete
+	Text <sNewText>
+	SetCurrent
+	SetController <ControlledBy> - This will set the starting controller default is neutral.  See ControlledBy var above.
+
+//---------------------------------------------------------------------------------------------
+*/
+
+// OpenMoHAA source: code/fgame/misc.cpp
+/*QUAKED func_useanim (0 0.5 0) ? VISIBLE TOUCHABLE CONTINUOUS
+
+This object allows you to place the player into a specific animation for the
+purposes of using an object within the world->
+
+This object should point at a func_useanimdest which contains specific
+information about how the player is supposed to be posed.
+
+"count" - how many times this should trigger (default -1, infinite)
+"thread" - thread to fire when used
+"triggertarget" - what to trigger when used.
+"delay" - how long it takes to be re-triggered ( default 3 seconds )
+"key" - item needed to activate this
+
+VISIBLE - if this is checked the trigger itself will be visible
+TOUCHABLE - if this is set we can activate the trigger by standing in it.
+CONTINUOUS - if this is checked the thing will re-trigger continously, otherwise
+it waits until the player has left the trigger field.
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/misc.cpp
+/*QUAKED func_useobject (0 0.5 0) ? MULTI-STATE
+
+Allows you to setup a special object that places the player into a specific state
+sequence.  Primarily used for levers and cranks.
+
+Object starts out in the "start" animation, when used the following occurs:
+
+It is determined whether or not the player is in the right position to activate
+the object, if it is, the player is moved to the exact offset and angle specified
+by "offset" and "yaw_offset".  The right position is determined by a dot product
+with "offset" and "yaw_offset".  The "cone" parameter controls the cone in which the
+object can be triggered. Once the player is in the right position, the player is placed
+into "state" and the "move" animation is played. Once the player animation ends, the
+"move_thread" will be called.  If the use button is continued to be held down and count
+is not finite, the animation will be continued to be played until the use key is held
+down.  Once the use key is let go, the "stop" animation will be played on the lever and
+the "stop_thread" will be called.
+
+"activate" - turns the useobject on
+"deactivate" - turns the useobject off
+"offset" - vector offset of where the player should stand
+"state" - state to go into when used
+"state_backwards" - what state to use when reversing the object
+"yaw_offset" - what direction the player should be facing when using the object
+"cone" - the cone in which the object can be used
+"count" - how many times this should trigger (default -1, infinite)
+"move_thread" - thread that is fired when the object has cycled one animation
+"stop_thread" - thread that is fired when the object has finished animating
+"reset_thread" - thread that is fired when the object is resetting itself
+"reset_time" - the time it takes for the object to reset, (default 0, it doesn't)
+"triggertarget" - target to trigger when finished animating, if reset_time is set, target
+will be fired again when resetting
+"damage_type" - if set, can be triggered by using a weapon to activate it.  If set to "all",
+any damage will activate it.
+
+MULTI-STATE - the object has two different states and must be used each time to set the state
+when multi state is active, the reset_thread is called instead of stop_thread.  All UseObjects
+have two states on and off.  When reset_time is set, the object will automatically return to the
+off state after a preset amount of time.  When multi-state is set this must be done manually.
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/earthquake.cpp
+/*QUAKED func_viewjitter (0 0.25 0.5) (-8 -8 -8) (8 8 8)
+Causes a radius view jitter
+"radius" sets the max effective range if the view jitter. Default is 128
+"edgeeffect" set the fraction of the total jitter to apply at the max range. Default is 0.2
+"jitteramount" sets the amount to jitter the view. Set in angles as "pitch yaw roll". Default is "2 2 3"
+"duration" set how long the view jitter should last. Default is 0 (instantanious)
+"timedecay" sets how the jitter angles will fall off over the jitter's duraction in degrees per second. Default is "2 2 3"
+"donedeath" makes the view jitter remove itself after being fired once. Any non-zero value will work.
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/gravpath.cpp
+/*QUAKED info_grav_pathnode (0 0 .5) (-16 -16 0) (16 16 32) HEADNODE FORCE PULL_UPWARDS
+ "radius" Radius of the effect of the pull (Default is 256)
+ "speed"  Speed of the pull (Use negative for a repulsion) (Default is 100)
+
+  Set HEADNODE to signify the head of the path.
+  Set FORCE if you want un-fightable gravity ( i.e. can't go backwards )
+  Set PULL_UPWARDS if you want the gravnodes to pull you upwards also
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/misc.cpp
+/*QUAKED info_landmark (0 0 1) (-16 -16 -16) (16 16 16)
+
+A landmark represents a named location. A landmark is determined based on the nearest origin to the specified location.
+
+"landmark_name" - Name assigned to the location.
+"origin" - Reference point assigned to the location.
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/misc.cpp
+/*QUAKED info_notnull (0 0.5 0) (-4 -4 -4) (4 4 4)
+
+Used as a positional target for lightning.
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/misc.cpp
+/*QUAKED info_null (0 0.5 0) (-4 -4 -4) (4 4 4)
+
+Used as a positional target for spotlights, etc.
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/navigate.cpp
+/*QUAKED info_pathnode (1 0 0) (-24 -24 0) (24 24 32) FLEE DUCK COVER DOOR JUMP LADDER
+
+FLEE marks the node as a safe place to flee to.  Actor will be removed when it reaches a flee node and is not visible to a player.
+
+DUCK marks the node as a good place to duck behind during weapon fire.
+
+COVER marks the node as a good place to hide behind during weapon fire.
+
+DOOR marks the node as a door node.  If an adjacent node has DOOR marked as well, the actor will only use the path if the door in between them is unlocked.
+
+JUMP marks the node as one to jump from when going to the node specified by target.
+"target" the pathnode to jump to.
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/playerstart.cpp
+/*QUAKED info_player_allied (0.75 0.75 1) (-16 -16 0) (16 16 96)
+
+potential spawning position for an allied player in a team games... ignored for FFA.
+
+"angle" - the direction the player should face
+"thread" - the thread that should be called when spawned at this position
+"arena" - the arena that this start point is located in
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/playerstart.cpp
+/*QUAKED info_player_axis (0.75 0.75 1) (-16 -16 0) (16 16 96)
+
+potential spawning position for an axis player in a team games... ignored for FFA.
+
+"angle" - the direction the player should face
+"thread" - the thread that should be called when spawned at this position
+"arena" - the arena that this start point is located in
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/playerstart.cpp
+/*QUAKED info_player_deathmatch (0.75 0.75 1) (-16 -16 0) (16 16 96)
+
+potential spawning position for deathmatch games
+
+"angle" - the direction the player should face
+"thread" - the thread that should be called when spawned at this position
+"arena" - the arena that this start point is located in
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/playerstart.cpp
+/*QUAKED info_player_intermission (0.75 0.75 0) (-16 -16 0) (16 16 96)
+
+viewing point in between deathmatch levels
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/playerstart.cpp
+/*QUAKED info_player_start (0.75 0.75 0) (-16 -16 0) (16 16 96)
+
+The normal starting point for a level.
+
+"angle" - the direction the player should face
+"thread" - the thread that should be called when spawned at this position
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/misc.cpp
+/*QUAKED info_vehiclepoint (0.15 0.5 0.25) (-8 -8 -8) (8 8 8) START_STOPPING START_SKIDDING STOP_SKIDDING
+
+Like info_waypoints, but with spawnflags for vehicles.
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/misc.cpp
+/*QUAKED info_waypoint (0 0.5 0) (-8 -8 -8) (8 8 8)
+
+Used as a positioning device for objects
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/light.cpp
+/*QUAKED light (0.75 0.5 0) (-8 -8 -8) (8 8 8) LINEAR NO_ENTITIES ENTITY_TRACE
+
+Non-displayed light. If it targets another entity it will become a spot light
+if "LINEAR" is set, it will be a linear light
+if "NO_ENTITIES" is set, this light will only effect the world, not entities
+if "ENTITY_TRACE" is set, a trace is done betwee the light and the entity.\
+The light is only added if the trace is clear
+
+"no_entity_light" - this light will not effect entities, just the world
+"light" - the intensity of the light, default 300
+"color" - the color of the light
+"falloff" - if linear, specify the linear falloff (defaults to 1)
+"radius" - make this a spot light of the given radius
+"angles" - make this a spot light centered on angles
+"spot_angle" - if this is a spot light, what angle to use (default 45)
+"entity_trace" - trace between the entity and the light
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/misc.cpp
+/*QUAKED misc_model (1 0.5 1) (0 0 0) (0 0 0)
+"model"     arbitrary .tik file to display
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/portal.cpp
+/*QUAKED portal_camera (1 0 1) (-8 -8 -8) (8 8 8) slowrotate fastrotate
+The target for a portal_surface.  You can set either angles or target another entity to determine the direction of view.
+"roll" an angle modifier to orient the camera around the target vector;
+*/
+
+// OpenMoHAA source: code/fgame/portal.cpp
+/*QUAKED portal_surface (1 0 1) (-8 -8 -8) (8 8 8)
+The portal surface nearest this entity will show a view from the targeted portal_camera, or a mirror view if untargeted.
+*/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ProjectileGenerator_Gun (1.0 0.0 1.0) (-12 -12 -12) (12 12 12) LaunchSound x TargetRandom StartOn FlipYaw FlipRoll TargetPlayer HideModel
+
+  Allows you to launch projectiles without the need for actual AI.  Useful for faking large battles.
+  Here are the params:
+
+  ID <nIdNum>
+  MinDuration <nMinDur=1>           (Min burst cycle duration)
+  MaxDuration <nMaxDur=3>           (Max burst cycle duration)
+  Cycles <nCycles=0>                (0=infinite)
+  MinNumShots <nMinNumShots=1>      (Minimum # of shots per cycle)
+  MaxNumShots <nMaxNumShots=1>      (Maximum # of shots per cycle)
+
+  MinDelay <nDelay=2>               (min amount of time between cycles)
+  MaxDelay <nDelay=10>              (max amount of time between cycles)
+  Accuracy <nAccuracy=10>           (accuracy measured in feet. 0-25 feet range)
+  launchsound <sSoundName>          (Defaults to no sound)
+  FireOnStartUp						(defaults to 1.  This flag tells the PG to fire immediately when turned on.  Then do its delay from then on.)
+
+  bulletLarge <0,1,2,3>				(whether to fire normal, rifle, artillery or larger bullets)
+  tracerSpeed <0,2>					(scale factor for tracer speed)
+
+  Here are some useful script commands:
+
+  $<generatorName> TurnOn
+  $<generatorName> TurnOff
+  $<generatorName> gettargetentity   ( return the entity that is targeted )
+  $<generatorName> isturnedon        ( is the projectil generator turned on? )
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ProjectileGenerator_Heavy (1.0 0.0 1.0) (-12 -12 -12) (12 12 12)  LaunchSound x TargetRandom StartOn FlipYaw FlipRoll TargetPlayer HideModel
+
+  Allows you to launch projectiles without the need for actual AI.  Useful for faking large battles.
+  Here are the params:
+
+  ID <nIdNum>
+  Model		 <sModelName>			(Defaults to bazooka weapon)
+  Projectile <sModelName>			(Defaults to bazooka projectile)
+  MinDuration <nMinDur=1>           (Min burst cycle duration)
+  MaxDuration <nMaxDur=3>           (Max burst cycle duration)
+  Cycles <nCycles=0>                (0=infinite)
+  MinNumShots <nMinNumShots=1>      (Minimum # of shots per cycle)
+  MaxNumShots <nMaxNumShots=1>      (Maximum # of shots per cycle)
+
+  MinDelay <nDelay=2>               (min amount of time between cycles)
+  MaxDelay <nDelay=10>              (max amount of time between cycles)
+  Accuracy <nAccuracy=10>           (accuracy measured in feet. 0-25 feet range)
+
+  FireOnStartUp						(defaults to 1.  This flag tells the PG to fire immediately when turned on.  Then do its delay from then on.)
+
+  IsDonut	<nIsDonut=1>			(indicates to use donut to calculate impact location)
+  Arc		<nArc=#degrees)			(how many degrees does the arc have)
+  minDonut <nMinDonut=15>			(mindistance from player)
+  maxDonut <nMaxDonut=30>			(maxdistance from player)
+  launchsound <sSoundName>          (Defaults to no sound)
+
+  Here are some useful script commands:
+
+  $<generatorName> TurnOn
+  $<generatorName> TurnOff
+  $<generatorName> gettargetentity   ( return the entity that is targeted )
+  $<generatorName> isturnedon        ( is the projectil generator turned on? )
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ProjectileGenerator_Projectile (1.0 0.0 1.0) (-12 -12 -12) (12 12 12)  LaunchSound x TargetRandom StartOn FlipYaw FlipRoll TargetPlayer HideModel
+
+  Allows you to launch projectiles without the need for actual AI.  Useful for faking large battles.
+  Here are the params:
+
+  ID <nIdNum>
+  Model		 <sModelName>			(Defaults to bazooka weapon)
+  Projectile <sModelName>			(Defaults to bazooka projectile)
+  MinDuration <nMinDur=1>           (Min burst cycle duration)
+  MaxDuration <nMaxDur=3>           (Max burst cycle duration)
+  Cycles <nCycles=0>                (0=infinite)
+  MinNumShots <nMinNumShots=1>      (Minimum # of shots per cycle)
+  MaxNumShots <nMaxNumShots=1>      (Maximum # of shots per cycle)
+
+  MinDelay <nDelay=2>               (min amount of time between cycles)
+  MaxDelay <nDelay=10>              (max amount of time between cycles)
+  Accuracy <nAccuracy=10>           (accuracy measured in feet. 0-25 feet range)
+  FireOnStartUp						(defaults to 1.  This flag tells the PG to fire immediately when turned on.  Then do its delay from then on.)
+
+  IsDonut	<nIsDonut=1>			(indicates to use donut to calculate impact location)
+  Arc		<nArc=#degrees)			(how many degrees does the arc have)
+  minDonut <nMinDonut=15>			(mindistance from player)
+  maxDonut <nMaxDonut=30>			(maxdistance from player)
+  launchsound <sSoundName>          (Defaults to no sound)
+
+  preimpactsound <sSoundName>       (Defaults to no sound)
+  preimpactsoundtime <nTime=1.0>    (Time before impact to begin preimpact sound)
+  preimpactsoundprob <nProb=0.0>    (Chance of an impact sound being played. 0..1 range )
+
+  Here are some useful script commands:
+
+  $<generatorName> TurnOn
+  $<generatorName> TurnOff
+  $<generatorName> playpreimpact     ( plays the preimpact sound immediately )
+  $<generatorName> gettargetentity   ( return the entity that is targeted )
+  $<generatorName> isturnedon        ( is the projectil generator turned on? )
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ProjectileGenerator_Target (1.0 0.0 1.0) (-12 -12 -12) (12 12 12)
+
+  Place this target down and assign it a ProjectileGenerator ID and it will
+  shoot here....
+
+  Here are the params:
+
+  ID      <nIdNum>   (Generator ID number.)
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/doors.cpp
+/*QUAKED script_door (0 0.5 1) ? START_OPEN x DOOR_DONT_LINK NOT_PLAYERS NOT_MONSTERS TOGGLE AUTO_OPEN TARGETED
+if two doors touch, they are assumed to be connected and operate as a unit.
+
+TOGGLE causes the door to wait in both the start and end states for a trigger event.
+DOOR_DONT_LINK is for when you have two doors that are touching but you want to operate independently.
+
+START_OPEN causes the door to move to its destination when spawned, and operate in reverse.  It is used to temporarily or permanently close off an area when triggered (not usefull for touch or takedamage doors).
+OPEN_DIRECTION indicates which direction to open when START_OPEN is set.
+AUTO_OPEN causes the door to open when a player is near instead of waiting for the player to use the door.
+TARGETED door is only operational from triggers or script
+
+"message"		is printed when the door is touched if it is a trigger door and it hasn't been fired yet
+"angle"			determines the opening direction.  point toward the middle of the door (away from the hinge)
+"targetname"	if set, no touch field will be spawned and a remote button or trigger field activates the door.
+"health"			if set, door must be shot open
+"speed"			move speed (100 default)
+"time"			move time (1/speed default, overides speed)
+"wait"			wait before returning (3 default, -1 = never return)
+"dmg"				damage to inflict when blocked (0 default)
+"key"          The item needed to open this door (default nothing)
+"initthread"   code to execute to setup the door (optional)
+"openthread"   code to execute when opening the door (required)
+               The openthread should send the "dooropened" event to the door, when it is completely open
+"closethread"  code to execute when closing the door (required)
+               The closethread should send the "doorclosed" event to the door, when it is completely closed
+
+"sound_stop"		Specify the sound that plays when the door stops moving (default global door_stop)
+"sound_move"		Specify the sound that plays when the door opens or closes (default global door_moving)
+"sound_message"	Specify the sound that plays when the door displays a message
+"sound_locked"	   Specify the sound that plays when the door is locked
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/scriptslave.cpp
+/*QUAKED script_model (0 0.5 1) (0 0 0) (0 0 0) NOT_SOLID
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/scriptslave.cpp
+/*QUAKED script_model_realdamage (0 0.5 1) (0 0 0) (0 0 0) NOT_SOLID ALWAYS_DRAW
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/scriptslave.cpp
+/*QUAKED script_object (0 0.5 1) ? NOT_SOLID
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/scriptslave.cpp
+/*QUAKED script_origin (1.0 0 0) (-8 -8 -8) (8 8 8)
+
+Used as an alternate origin for objects.  Bind the object to the script_origin
+in order to simulate changing that object's origin.
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/scriptslave.cpp
+/*QUAKED script_skyorigin (1.0 0 0) ?
+
+Used to specify the origin of a portal sky
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/trigger.cpp
+/*QUAKED sound_randomspeaker (0 0.75 0.75) (-8 -8 -8) (8 8 8) x x NOT_PLAYERS MONSTERS PROJECTILES x x
+
+play a sound at random times
+
+"mindelay" minimum delay between sound triggers (default 3)
+"maxdelay" maximum delay between sound triggers (default 10)
+"chance" chance that sound will play when fired (default 1)
+"volume" how loud 0-4 (1 default full volume)
+"noise" sound to play
+"channel" channel on which to play sound\
+(0 auto, 1 weapon, 2 voice, 3 item, 4 body, 8 don't use PHS) (voice is default)
+
+Normal sounds play each time the target is used.
+
+If NOT_PLAYERS is set, the trigger does not respond to players
+If MONSTERS is set, the trigger will respond to monsters
+If PROJECTILES is set, the trigger will respond to projectiles (rockets, grenades, etc.)
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/trigger.cpp
+/*QUAKED sound_speaker (0 0.75 0.75) (-8 -8 -8) (8 8 8) AMBIENT-ON AMBIENT-OFF NOT_PLAYERS MONSTERS PROJECTILES TOGGLE
+
+play a sound when it is used
+
+AMBIENT-ON specifies an ambient sound that starts on
+AMBIENT-OFF specifies an ambient sound that starts off
+TOGGLE specifies that the speaker toggles on triggering
+
+if (AMBIENT-?) is not set, then the sound is sent over explicitly this creates more net traffic
+
+"volume" how loud 0-4 (1 default full volume, ambients do not respond to volume)
+"noise" sound to play
+"channel" channel on which to play sound\
+(0 auto, 1 weapon, 2 voice, 3 item, 4 body, 8 don't use PHS) (voice is default)
+"setthread" name of thread to trigger.  This can be in a different script file as well\
+by using the '::' notation.
+
+Normal sounds play each time the target is used.
+
+Ambient Looped sounds have a volume 1, and the use function toggles it on/off.
+
+If NOT_PLAYERS is set, the trigger does not respond to players
+If MONSTERS is set, the trigger will respond to monsters
+If PROJECTILES is set, the trigger will respond to projectiles (rockets, grenades, etc.)
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ThrobbingBox_ExplodeFlak88 (1.0 0.0 1.0) (-12 -12 -12) (12 12 12)
+
+  Explosive throbbing box.  Connect to the object you want to make explode.
+
+  Parameters:
+		Model - name of pulse model (default=items/pulse_explosive.tik")
+		UsedModel - name of non-pulse version (default=items/explosive.tik")
+		ExplosionSound - name of explosion sound (default=explode_flak88)
+		ActivateSound - name of activation sound (default=plantbomb)
+		TickSound - name of 'ticking' sound (default=bombtick)
+		Damage - amount of damage to do (default=300)
+		radius - radius to do the damage (default=300)
+		stopwatchduration - how long should the stopwatch go (default=5 seconds)
+		setthread - name of thread to call when the explosion happens...
+
+ ---------------------------------------------------------------------------------------------
+*/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ThrobbingBox_ExplodeNebelwerfer (1.0 0.0 1.0) (-12 -12 -12) (12 12 12) ReplaceModel
+
+  Explosive throbbing box.  Connect to the object you want to make explode.
+
+  Parameters:
+		Model - name of pulse model (default=items/pulse_explosive.tik")
+		UsedModel - name of non-pulse version (default=items/explosive.tik")
+		ExplosionSound - name of explosion sound (default=explode_flak88)
+		ActivateSound - name of activation sound (default=plantbomb)
+		TickSound - name of 'ticking' sound (default=bombtick)
+		Damage - amount of damage to do (default=300)
+		radius - radius to do the damage (default=300)
+		stopwatchduration - how long should the stopwatch go (default=5 seconds)
+		setthread - name of thread to call when the explosion happens...
+
+ ---------------------------------------------------------------------------------------------
+*/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ThrobbingBox_ExplodePlayerFlak88 (1.0 0.0 1.0) (-12 -12 -12) (12 12 12)
+
+  Explosive throbbing box.  Connect to the object you want to make explode.
+
+
+  Parameters:
+		Model - name of pulse model (default=items/pulse_explosive.tik")
+		UsedModel - name of non-pulse version (default=items/explosive.tik")
+		ExplosionSound - name of explosion sound (default=explode_flak88)
+		ActivateSound - name of activation sound (default=plantbomb)
+		TickSound - name of 'ticking' sound (default=bombtick)
+		Damage - amount of damage to do (default=300)
+		radius - radius to do the damage (default=300)
+		stopwatchduration - how long should the stopwatch go (default=5 seconds)
+		setthread - name of thread to call when the explosion happens...
+
+ ---------------------------------------------------------------------------------------------
+*/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ThrobbingBox_ExplodePlayerNebelwerfer (1.0 0.0 1.0) (-12 -12 -12) (12 12 12) ReplaceModel
+
+  Explosive throbbing box.  Connect to the object you want to make explode.
+
+  Parameters:
+		Model - name of pulse model (default=items/pulse_explosive.tik")
+		UsedModel - name of non-pulse version (default=items/explosive.tik")
+		ExplosionSound - name of explosion sound (default=explode_flak88)
+		ActivateSound - name of activation sound (default=plantbomb)
+		TickSound - name of 'ticking' sound (default=bombtick)
+		Damage - amount of damage to do (default=300)
+		radius - radius to do the damage (default=300)
+		stopwatchduration - how long should the stopwatch go (default=5 seconds)
+		setthread - name of thread to call when the explosion happens...
+
+ ---------------------------------------------------------------------------------------------
+*/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ThrobbingBox_explosive (1.0 0.0 1.0) (-12 -12 -12) (12 12 12) ReplaceModel
+
+  Explosive throbbing box.  Connect to the object you want to make explode.
+
+  ReplaceModel - check this if you want the destroy model to replace the model instead of doing
+                 a model switch.
+
+
+  Parameters:
+		Model - name of pulse model (default=items/pulse_explosive.tik")
+		UsedModel - name of non-pulse version (default=items/explosive.tik")
+		ExplosionSound - name of explosion sound (default=explode_flak88)
+		ActivateSound - name of activation sound (default=plantbomb)
+		TickSound - name of 'ticking' sound (default=bombtick)
+		Damage - amount of damage to do (default=300)
+		radius - radius to do the damage (default=300)
+		stopwatchduration - how long should the stopwatch go (default=5 seconds)
+		DestroyModel - name of model to switch target to.
+		setthread - name of thread to call when the explosion happens...
+		setusethread - name of thread to call when explosive was placed.
+		explosionpos - vector of the position the explosion should occur
+
+  Note:
+	* Set stopwatchduration to 0 to prevent the explosion and stopwatch from happening.
+	* You may then send the Explode event to this object to make the explosion happen.
+
+ ---------------------------------------------------------------------------------------------
+
+*/
+
+// OpenMoHAA source: code/fgame/Entities.cpp
+/*QUAKED ThrobbingBox_Stickybomb (1.0 0.0 1.0) (-12 -12 -12) (12 12 12) ReplaceModel WetFuse
+
+  Stickybomb throbbing box.  Connect to the object you want to make explode.
+  When WetFuse is selected, the bomb will fizzle out and can only be destroyed by shooting it.
+
+  Parameters:
+		ExplosionSound - name of explosion sound (default=explode_flak88)
+		Damage - amount of damage to do (default=300)
+		radius - radius to do the damage (default=300)
+		stopwatchduration - how long should the fuse go (default=5 seconds)
+		setthread - name of thread to call when the explosion happens...
+		DestroyModel - name of model to switch target to.
+		setusethread - name of thread to call when stickybomb is placed.
+
+ ---------------------------------------------------------------------------------------------
+*/
+
+// OpenMoHAA source: code/fgame/trigger.cpp
+/*QUAKED trigger_camerause (1 0 0) ? VISIBLE x NOT_PLAYERS MONSTERS
+
+Activates 'targeted' camera when 'used'
+If activated, toggles through cameras
+"setthread" name of thread to trigger.  This can be in a different script file as well\
+by using the '::' notation.
+
+"triggerable" turn trigger on
+"nottriggerable" turn trigger off
+
+If NOT_PLAYERS is set, the trigger does not respond to players
+If MONSTERS is set, the trigger will respond to monsters
+
+******************************************************************************/
+
+// OpenMoHAA source: code/fgame/trigger.cpp
+/*QUAKED trigger_changelevel (1 0 0) ? NO_INTERMISSION x NOT_PLAYERS MONSTERS PROJECTILES
 
 When the player touches this, he gets sent to the map listed in the "map" variable.
 Unless the NO_INTERMISSION flag is set, the view will go to the info_intermission
