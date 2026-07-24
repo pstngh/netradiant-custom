@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    name: macos-latest (${{ runner.arch }})
+    name: macos-latest
     runs-on: macos-latest
     timeout-minutes: 60
 
