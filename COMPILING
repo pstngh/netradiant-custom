@@ -42,31 +42,37 @@ run:
 Execute 'install/radiant.x86'
 
 
-OSX(using X-windows)
-====================
+macOS (native Qt)
+=================
 
 environment:
-- OS X 10.5 or 10.6
-- Xcode developer tools installed (OSX DVD)
-- X11 (from the OS X DVD)
-- MacPorts or fink or homebrew installed
-- the following packages installed:
-  Macports (reported as working in 10.15.3):
-    gtkglext pkgconfig glib2-devel libxml2 gtk2 pango atk gettext wget
-  Fink:
-    gtkglext1 pkgconfig glib2-dev libxml2 gtk+2 gtk+2-dev pango1-xft2-ft219-dev atk1 gettext-dev wget
-  homebrew (does not work due to X11->Quartz switch, requires patched gtkglext):
-    gtk+ gtkglext
+- macOS 12 or newer
+- Xcode command-line tools
+- GNU make
+- Homebrew
+
+dependencies:
+  brew install qt@5 glib libxml2 libpng jpeg-turbo assimp@5 pkgconf dylibbundler
 
 build:
-run 'make'
+  QT_PREFIX="$(brew --prefix qt@5)"
+  ASSIMP_PREFIX="$(brew --prefix assimp@5)"
+  JPEG_PREFIX="$(brew --prefix jpeg-turbo)"
+  export PATH="$QT_PREFIX/bin:$PATH"
+  export PKG_CONFIG_PATH="$QT_PREFIX/lib/pkgconfig:$ASSIMP_PREFIX/lib/pkgconfig:$(brew --prefix glib)/lib/pkgconfig:$(brew --prefix libxml2)/lib/pkgconfig:$(brew --prefix libpng)/lib/pkgconfig:$JPEG_PREFIX/lib/pkgconfig"
+  make CC=clang CXX=clang++ \
+    CPPFLAGS_JPEG="-I$JPEG_PREFIX/include" \
+    LIBS_JPEG="-L$JPEG_PREFIX/lib -ljpeg" \
+    DOWNLOAD_GAMEPACKS=no
 
-homebrew build:
-run 'export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/opt/X11/lib/pkgconfig
-make'
+package:
+  bash setup/apple/package.sh
 
 run:
-Switch into the install folder, and run NetRadiant.app
+  open setup/apple/target/NetRadiant-Custom.app
+
+The package step deploys Qt and other Homebrew dynamic libraries, validates
+that no Homebrew paths remain, ad-hoc signs the app, and creates a zip archive.
 
 
 Win32 (using MSYS2)

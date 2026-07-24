@@ -98,12 +98,14 @@ LIBS_ASSIMP        := -lassimp_ -L$(INSTALLDIR)
 endif
 CPPFLAGS_GL        ?=
 LIBS_GL            ?= -lGL # -lopengl32 on Win32
+OPENGL_HEADER      ?= GL/gl.h
 CPPFLAGS_DL        ?=
 LIBS_DL            ?= -ldl # nothing on Win32
 CPPFLAGS_ZLIB      ?=
 LIBS_ZLIB          ?= -lz
 CPPFLAGS_JPEG      ?=
 LIBS_JPEG          ?= -ljpeg
+DLL_SHARED_FLAG    ?= -shared
 DEPEND_ON_MAKEFILE ?= yes
 # yes = download; all = even download undistributable gamepacks; no = disable; allinone = dl all-in-one compact fixed archive
 DOWNLOAD_GAMEPACKS ?= allinone
@@ -245,12 +247,13 @@ else
 
 ifeq ($(OS),Darwin)
 	CPPFLAGS_COMMON += -DPOSIX -DXWINDOWS
-	CFLAGS_COMMON += -fPIC
-	CXXFLAGS_COMMON += -fno-exceptions -fno-rtti
-	MACLIBDIR ?= /opt/local/lib
-	CPPFLAGS_COMMON += -I$(MACLIBDIR)/../include -I/usr/X11R6/include
-	LDFLAGS_COMMON += -L$(MACLIBDIR) -L/usr/X11R6/lib
-	LDFLAGS_DLL += -dynamiclib -ldl
+	MACOSX_DEPLOYMENT_TARGET ?= 12.0
+	CFLAGS_COMMON += -fPIC -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
+	LDFLAGS_COMMON := $(filter-out -s,$(LDFLAGS_COMMON))
+	LDFLAGS_COMMON += -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET) -Wl,-headerpad_max_install_names
+	LDFLAGS_DLL = -dynamiclib -undefined dynamic_lookup
+	DLL_SHARED_FLAG =
+	LIBS_COMMON = -lpthread
 	EXE ?= $(shell uname -m)
 	MAKE_EXE_SYMLINK = true
 	A = a
@@ -259,9 +262,17 @@ ifeq ($(OS),Darwin)
 	# workaround for weird prints
 	ECHO_NOLF = /bin/echo -n
 
-	# workaround: http://developer.apple.com/qa/qa2007/qa1567.html
-	LIBS_GL += -lX11 -dylib_file /System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/libGL.dylib:/System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/libGL.dylib
-	# workaround: we have no "ldd" for OS X, so...
+	# Homebrew Qt is packaged as frameworks. --libs-only-L/--libs-only-l
+	# drops the required -F/-framework arguments on macOS.
+	LIBS_QTCORE := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKGCONFIG) Qt5Core --libs $(STDERR_TO_DEVNULL))
+	LIBS_QTGUI := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKGCONFIG) Qt5Gui --libs $(STDERR_TO_DEVNULL))
+	LIBS_QTWIDGETS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKGCONFIG) Qt5Widgets --libs $(STDERR_TO_DEVNULL))
+	LIBS_QTSVG := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKGCONFIG) Qt5Svg --libs $(STDERR_TO_DEVNULL))
+
+	LIBS_GL = -framework OpenGL
+	OPENGL_HEADER = OpenGL/gl.h
+	LIBS_DL =
+	# We have no ldd on macOS; package validation uses otool instead.
 	LDD =
 	OTOOL = otool
 else
@@ -398,7 +409,7 @@ dependencies-check:
 	checkheader libglib2.0-dev glib.h g_path_is_absolute "$(CPPFLAGS_GLIB)" "$(LIBS_GLIB)"; \
 	checkheader libxml2-dev libxml/xpath.h xmlXPathInit "$(CPPFLAGS_XML)" "$(LIBS_XML)"; \
 	checkheader libpng12-dev png.h png_create_read_struct "$(CPPFLAGS_PNG)" "$(LIBS_PNG)"; \
-	checkheader "mesa-common-dev (or another OpenGL library)" GL/gl.h glClear "$(CPPFLAGS_GL)" "$(LIBS_GL)"; \
+	checkheader "mesa-common-dev (or another OpenGL library)" $(OPENGL_HEADER) glClear "$(CPPFLAGS_GL)" "$(LIBS_GL)"; \
 	checkheader Qt5Core QCoreApplication QCoreApplication::exec "$(CPPFLAGS_QTCORE)" "$(LIBS_QTCORE)"; \
 	checkheader Qt5Gui QGuiApplication QGuiApplication::exec "$(CPPFLAGS_QTGUI)" "$(LIBS_QTGUI)"; \
 	checkheader Qt5Widgets QApplication QApplication::exec "$(CPPFLAGS_QTWIDGETS)" "$(LIBS_QTWIDGETS)"; \
@@ -515,7 +526,7 @@ $(INSTALLDIR)/%: $(INSTALLDIR)/%.$(EXE)
 
 %.$(DLL):
 	file=$@; $(MKDIR) $${file%/*}
-	$(CXX) $^ $(LDFLAGS) $(LDFLAGS_COMMON) $(LDFLAGS_EXTRA) $(LDFLAGS_DLL) $(LIBS_EXTRA) $(LIBS_COMMON) $(LIBS) -shared -o $@
+	$(CXX) $^ $(LDFLAGS) $(LDFLAGS_COMMON) $(LDFLAGS_EXTRA) $(LDFLAGS_DLL) $(LIBS_EXTRA) $(LIBS_COMMON) $(LIBS) $(DLL_SHARED_FLAG) -o $@
 	[ -z "$(LDD)" ] || [ -z "`$(LDD) -r $@ $(STDERR_TO_STDOUT) $(STDOUT_TO_DEVNULL) $(TEE_STDERR)`" ] || { $(RM) $@; exit 1; }
 
 %.rc: %.ico
@@ -562,316 +573,7 @@ $(INSTALLDIR)/q3map2.$(EXE): \
 	tools/quake3/q3map2/autopk3.o \
 	tools/quake3/q3map2/brush.o \
 	tools/quake3/q3map2/bspfile_abstract.o \
-	tools/quake3/q3map2/bspfile_ibsp.o \
-	tools/quake3/q3map2/bspfile_rbsp.o \
-	tools/quake3/q3map2/bsp.o \
-	tools/quake3/q3map2/convert_ase.o \
-	tools/quake3/q3map2/convert_bsp.o \
-	tools/quake3/q3map2/convert_json.o \
-	tools/quake3/q3map2/convert_map.o \
-	tools/quake3/q3map2/convert_obj.o \
-	tools/quake3/q3map2/decals.o \
-	tools/quake3/q3map2/exportents.o \
-	tools/quake3/q3map2/facebsp.o \
-	tools/quake3/q3map2/fog.o \
-	tools/quake3/q3map2/games.o \
-	tools/quake3/q3map2/help.o \
-	tools/quake3/q3map2/image.o \
-	tools/quake3/q3map2/leakfile.o \
-	tools/quake3/q3map2/light_bounce.o \
-	tools/quake3/q3map2/lightmaps_ydnar.o \
-	tools/quake3/q3map2/light.o \
-	tools/quake3/q3map2/light_trace.o \
-	tools/quake3/q3map2/light_ydnar.o \
-	tools/quake3/q3map2/main.o \
-	tools/quake3/q3map2/map.o \
-	tools/quake3/q3map2/minimap.o \
-	tools/quake3/q3map2/mesh.o \
-	tools/quake3/q3map2/model.o \
-	tools/quake3/q3map2/patch.o \
-	tools/quake3/q3map2/path_init.o \
-	tools/quake3/q3map2/portals.o \
-	tools/quake3/q3map2/prtfile.o \
-	tools/quake3/q3map2/shaders.o \
-	tools/quake3/q3map2/surface_extra.o \
-	tools/quake3/q3map2/surface_foliage.o \
-	tools/quake3/q3map2/surface_fur.o \
-	tools/quake3/q3map2/surface_meta.o \
-	tools/quake3/q3map2/surface.o \
-	tools/quake3/q3map2/tjunction.o \
-	tools/quake3/q3map2/tree.o \
-	tools/quake3/q3map2/visflow.o \
-	tools/quake3/q3map2/vis.o \
-	tools/quake3/q3map2/writebsp.o \
-	libcrnlib.$(A) \
-	libddslib.$(A) \
-	libetclib.$(A) \
-	libfilematch.$(A) \
-	libl_net.$(A) \
-	libwebplib.$(A) \
-	$(if $(findstring Win32,$(OS)),icons/q3map2.o,) \
-	| $(if $(findstring yes,$(ASSIMP_INTERNAL)),$(INSTALLDIR)/libassimp_.$(DLL),) \
-
-libmathlib.$(A): CPPFLAGS_EXTRA := -Ilibs
-libmathlib.$(A): \
-	libs/mathlib/bbox.o \
-	libs/mathlib/line.o \
-	libs/mathlib/m4x4.o \
-	libs/mathlib/mathlib.o \
-	libs/mathlib/ray.o \
-
-libl_net.$(A): CPPFLAGS_EXTRA := -Ilibs
-libl_net.$(A): \
-	libs/l_net/l_net.o \
-	libs/l_net/l_net_wins.o \
-
-libpicomodel.$(A): CPPFLAGS_EXTRA := -Ilibs
-libpicomodel.$(A): \
-	libs/picomodel/lwo/clip.o \
-	libs/picomodel/lwo/envelope.o \
-	libs/picomodel/lwo/list.o \
-	libs/picomodel/lwo/lwio.o \
-	libs/picomodel/lwo/lwo2.o \
-	libs/picomodel/lwo/lwob.o \
-	libs/picomodel/lwo/pntspols.o \
-	libs/picomodel/lwo/surface.o \
-	libs/picomodel/lwo/vecmath.o \
-	libs/picomodel/lwo/vmap.o \
-	libs/picomodel/picointernal.o \
-	libs/picomodel/picomodel.o \
-	libs/picomodel/picomodules.o \
-	libs/picomodel/pm_3ds.o \
-	libs/picomodel/pm_ase.o \
-	libs/picomodel/pm_fm.o \
-	libs/picomodel/pm_lwo.o \
-	libs/picomodel/pm_md2.o \
-	libs/picomodel/pm_md3.o \
-	libs/picomodel/pm_mdc.o \
-	libs/picomodel/pm_ms3d.o \
-	libs/picomodel/pm_obj.o \
-	libs/picomodel/pm_terrain.o \
-
-$(INSTALLDIR)/libassimp_.$(DLL): LIBS_EXTRA := $(LIBS_ZLIB)
-$(INSTALLDIR)/libassimp_.$(DLL): CPPFLAGS_EXTRA := $(CPPFLAGS_ZLIB) \
-	-Ilibs/assimp/include -Ilibs/assimp/code -Ilibs/assimp/contrib/pugixml/src -Ilibs/assimp/contrib/unzip \
-	-Ilibs/assimp -Ilibs/assimp/contrib/openddlparser/include -Ilibs/assimp/contrib/rapidjson/include -Ilibs/assimp/contrib \
-	-DASSIMP_BUILD_DLL_EXPORT -DASSIMP_BUILD_NO_C4D_IMPORTER -DASSIMP_BUILD_NO_EXPORT -DASSIMP_BUILD_NO_IFC_IMPORTER \
-	-DASSIMP_BUILD_NO_OWN_ZLIB -DASSIMP_IMPORTER_GLTF_USE_OPEN3DGC=1 -DMINIZ_USE_UNALIGNED_LOADS_AND_STORES=0 -DOPENDDLPARSER_BUILD \
-	-DRAPIDJSON_HAS_STDSTRING=1 -DRAPIDJSON_NOMEMBERITERATORCLASS -DWIN32_LEAN_AND_MEAN -Dassimp_EXPORTS \
-	-fvisibility=hidden -Wno-long-long -fexceptions -frtti -Wno-cast-qual
-$(INSTALLDIR)/libassimp_.$(DLL): \
-	libs/assimp/code/Common/Assimp.o \
-	libs/assimp/code/CApi/CInterfaceIOWrapper.o \
-	libs/assimp/code/Common/BaseImporter.o \
-	libs/assimp/code/Common/BaseProcess.o \
-	libs/assimp/code/Common/PostStepRegistry.o \
-	libs/assimp/code/Common/ImporterRegistry.o \
-	libs/assimp/code/Common/DefaultIOStream.o \
-	libs/assimp/code/Common/DefaultIOSystem.o \
-	libs/assimp/code/Common/ZipArchiveIOSystem.o \
-	libs/assimp/code/Common/Importer.o \
-	libs/assimp/code/Common/SGSpatialSort.o \
-	libs/assimp/code/Common/VertexTriangleAdjacency.o \
-	libs/assimp/code/Common/SpatialSort.o \
-	libs/assimp/code/Common/SceneCombiner.o \
-	libs/assimp/code/Common/ScenePreprocessor.o \
-	libs/assimp/code/Common/SkeletonMeshBuilder.o \
-	libs/assimp/code/Common/StandardShapes.o \
-	libs/assimp/code/Common/TargetAnimation.o \
-	libs/assimp/code/Common/RemoveComments.o \
-	libs/assimp/code/Common/Subdivision.o \
-	libs/assimp/code/Common/scene.o \
-	libs/assimp/code/Common/Bitmap.o \
-	libs/assimp/code/Common/Version.o \
-	libs/assimp/code/Common/CreateAnimMesh.o \
-	libs/assimp/code/Common/simd.o \
-	libs/assimp/code/Common/material.o \
-	libs/assimp/code/Common/AssertHandler.o \
-	libs/assimp/code/Common/Exceptional.o \
-	libs/assimp/code/Common/DefaultLogger.o \
-	libs/assimp/code/PostProcessing/CalcTangentsProcess.o \
-	libs/assimp/code/PostProcessing/ComputeUVMappingProcess.o \
-	libs/assimp/code/PostProcessing/ConvertToLHProcess.o \
-	libs/assimp/code/PostProcessing/EmbedTexturesProcess.o \
-	libs/assimp/code/PostProcessing/FindDegenerates.o \
-	libs/assimp/code/PostProcessing/FindInstancesProcess.o \
-	libs/assimp/code/PostProcessing/FindInvalidDataProcess.o \
-	libs/assimp/code/PostProcessing/FixNormalsStep.o \
-	libs/assimp/code/PostProcessing/DropFaceNormalsProcess.o \
-	libs/assimp/code/PostProcessing/GenFaceNormalsProcess.o \
-	libs/assimp/code/PostProcessing/GenVertexNormalsProcess.o \
-	libs/assimp/code/PostProcessing/PretransformVertices.o \
-	libs/assimp/code/PostProcessing/ImproveCacheLocality.o \
-	libs/assimp/code/PostProcessing/JoinVerticesProcess.o \
-	libs/assimp/code/PostProcessing/LimitBoneWeightsProcess.o \
-	libs/assimp/code/PostProcessing/RemoveRedundantMaterials.o \
-	libs/assimp/code/PostProcessing/RemoveVCProcess.o \
-	libs/assimp/code/PostProcessing/SortByPTypeProcess.o \
-	libs/assimp/code/PostProcessing/SplitLargeMeshes.o \
-	libs/assimp/code/PostProcessing/TextureTransform.o \
-	libs/assimp/code/PostProcessing/TriangulateProcess.o \
-	libs/assimp/code/PostProcessing/ValidateDataStructure.o \
-	libs/assimp/code/PostProcessing/OptimizeGraph.o \
-	libs/assimp/code/PostProcessing/OptimizeMeshes.o \
-	libs/assimp/code/PostProcessing/DeboneProcess.o \
-	libs/assimp/code/PostProcessing/ProcessHelper.o \
-	libs/assimp/code/PostProcessing/MakeVerboseFormat.o \
-	libs/assimp/code/PostProcessing/ScaleProcess.o \
-	libs/assimp/code/PostProcessing/ArmaturePopulate.o \
-	libs/assimp/code/PostProcessing/GenBoundingBoxesProcess.o \
-	libs/assimp/code/PostProcessing/SplitByBoneCountProcess.o \
-	libs/assimp/code/Material/MaterialSystem.o \
-	libs/assimp/code/AssetLib/STEPParser/STEPFileReader.o \
-	libs/assimp/code/AssetLib/STEPParser/STEPFileEncoding.o \
-	libs/assimp/code/AssetLib/AMF/AMFImporter.o \
-	libs/assimp/code/AssetLib/AMF/AMFImporter_Geometry.o \
-	libs/assimp/code/AssetLib/AMF/AMFImporter_Material.o \
-	libs/assimp/code/AssetLib/AMF/AMFImporter_Postprocess.o \
-	libs/assimp/code/AssetLib/3DS/3DSConverter.o \
-	libs/assimp/code/AssetLib/3DS/3DSLoader.o \
-	libs/assimp/code/AssetLib/AC/ACLoader.o \
-	libs/assimp/code/AssetLib/ASE/ASELoader.o \
-	libs/assimp/code/AssetLib/ASE/ASEParser.o \
-	libs/assimp/code/AssetLib/Assbin/AssbinLoader.o \
-	libs/assimp/code/AssetLib/B3D/B3DImporter.o \
-	libs/assimp/code/AssetLib/BVH/BVHLoader.o \
-	libs/assimp/code/AssetLib/Collada/ColladaHelper.o \
-	libs/assimp/code/AssetLib/Collada/ColladaLoader.o \
-	libs/assimp/code/AssetLib/Collada/ColladaParser.o \
-	libs/assimp/code/AssetLib/DXF/DXFLoader.o \
-	libs/assimp/code/AssetLib/CSM/CSMLoader.o \
-	libs/assimp/code/AssetLib/HMP/HMPLoader.o \
-	libs/assimp/code/AssetLib/Irr/IRRMeshLoader.o \
-	libs/assimp/code/AssetLib/Irr/IRRShared.o \
-	libs/assimp/code/AssetLib/Irr/IRRLoader.o \
-	libs/assimp/code/AssetLib/LWO/LWOAnimation.o \
-	libs/assimp/code/AssetLib/LWO/LWOBLoader.o \
-	libs/assimp/code/AssetLib/LWO/LWOLoader.o \
-	libs/assimp/code/AssetLib/LWO/LWOMaterial.o \
-	libs/assimp/code/AssetLib/LWS/LWSLoader.o \
-	libs/assimp/code/AssetLib/M3D/M3DImporter.o \
-	libs/assimp/code/AssetLib/M3D/M3DWrapper.o \
-	libs/assimp/code/AssetLib/MD2/MD2Loader.o \
-	libs/assimp/code/AssetLib/MD3/MD3Loader.o \
-	libs/assimp/code/AssetLib/MD5/MD5Loader.o \
-	libs/assimp/code/AssetLib/MD5/MD5Parser.o \
-	libs/assimp/code/AssetLib/MDC/MDCLoader.o \
-	libs/assimp/code/AssetLib/MDL/MDLLoader.o \
-	libs/assimp/code/AssetLib/MDL/MDLMaterialLoader.o \
-	libs/assimp/code/AssetLib/MDL/HalfLife/HL1MDLLoader.o \
-	libs/assimp/code/AssetLib/MDL/HalfLife/UniqueNameGenerator.o \
-	libs/assimp/code/AssetLib/NFF/NFFLoader.o \
-	libs/assimp/code/AssetLib/NDO/NDOLoader.o \
-	libs/assimp/code/AssetLib/OFF/OFFLoader.o \
-	libs/assimp/code/AssetLib/Obj/ObjFileImporter.o \
-	libs/assimp/code/AssetLib/Obj/ObjFileMtlImporter.o \
-	libs/assimp/code/AssetLib/Obj/ObjFileParser.o \
-	libs/assimp/code/AssetLib/Ogre/OgreImporter.o \
-	libs/assimp/code/AssetLib/Ogre/OgreStructs.o \
-	libs/assimp/code/AssetLib/Ogre/OgreBinarySerializer.o \
-	libs/assimp/code/AssetLib/Ogre/OgreXmlSerializer.o \
-	libs/assimp/code/AssetLib/Ogre/OgreMaterial.o \
-	libs/assimp/code/AssetLib/OpenGEX/OpenGEXImporter.o \
-	libs/assimp/code/AssetLib/Ply/PlyLoader.o \
-	libs/assimp/code/AssetLib/Ply/PlyParser.o \
-	libs/assimp/code/AssetLib/MS3D/MS3DLoader.o \
-	libs/assimp/code/AssetLib/COB/COBLoader.o \
-	libs/assimp/code/AssetLib/Blender/BlenderLoader.o \
-	libs/assimp/code/AssetLib/Blender/BlenderDNA.o \
-	libs/assimp/code/AssetLib/Blender/BlenderScene.o \
-	libs/assimp/code/AssetLib/Blender/BlenderModifier.o \
-	libs/assimp/code/AssetLib/Blender/BlenderBMesh.o \
-	libs/assimp/code/AssetLib/Blender/BlenderTessellator.o \
-	libs/assimp/code/AssetLib/Blender/BlenderCustomData.o \
-	libs/assimp/code/AssetLib/XGL/XGLLoader.o \
-	libs/assimp/code/AssetLib/FBX/FBXImporter.o \
-	libs/assimp/code/AssetLib/FBX/FBXParser.o \
-	libs/assimp/code/AssetLib/FBX/FBXTokenizer.o \
-	libs/assimp/code/AssetLib/FBX/FBXConverter.o \
-	libs/assimp/code/AssetLib/FBX/FBXUtil.o \
-	libs/assimp/code/AssetLib/FBX/FBXDocument.o \
-	libs/assimp/code/AssetLib/FBX/FBXProperties.o \
-	libs/assimp/code/AssetLib/FBX/FBXMeshGeometry.o \
-	libs/assimp/code/AssetLib/FBX/FBXMaterial.o \
-	libs/assimp/code/AssetLib/FBX/FBXModel.o \
-	libs/assimp/code/AssetLib/FBX/FBXAnimation.o \
-	libs/assimp/code/AssetLib/FBX/FBXNodeAttribute.o \
-	libs/assimp/code/AssetLib/FBX/FBXDeformer.o \
-	libs/assimp/code/AssetLib/FBX/FBXBinaryTokenizer.o \
-	libs/assimp/code/AssetLib/FBX/FBXDocumentUtil.o \
-	libs/assimp/code/AssetLib/IQM/IQMImporter.o \
-	libs/assimp/code/AssetLib/Q3D/Q3DLoader.o \
-	libs/assimp/code/AssetLib/Q3BSP/Q3BSPFileParser.o \
-	libs/assimp/code/AssetLib/Q3BSP/Q3BSPFileImporter.o \
-	libs/assimp/code/AssetLib/Raw/RawLoader.o \
-	libs/assimp/code/AssetLib/SIB/SIBImporter.o \
-	libs/assimp/code/AssetLib/SMD/SMDLoader.o \
-	libs/assimp/code/AssetLib/STL/STLLoader.o \
-	libs/assimp/code/AssetLib/Terragen/TerragenLoader.o \
-	libs/assimp/code/AssetLib/Unreal/UnrealLoader.o \
-	libs/assimp/code/AssetLib/X/XFileImporter.o \
-	libs/assimp/code/AssetLib/X/XFileParser.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter.o \
-	libs/assimp/code/AssetLib/X3D/X3DGeoHelper.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Geometry2D.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Geometry3D.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Group.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Light.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Metadata.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Networking.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Postprocess.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Rendering.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Shape.o \
-	libs/assimp/code/AssetLib/X3D/X3DImporter_Texturing.o \
-	libs/assimp/code/AssetLib/X3D/X3DXmlHelper.o \
-	libs/assimp/code/AssetLib/glTF/glTFCommon.o \
-	libs/assimp/code/AssetLib/glTF/glTFImporter.o \
-	libs/assimp/code/AssetLib/glTF2/glTF2Importer.o \
-	libs/assimp/code/AssetLib/3MF/D3MFImporter.o \
-	libs/assimp/code/AssetLib/3MF/D3MFOpcPackage.o \
-	libs/assimp/code/AssetLib/3MF/XmlSerializer.o \
-	libs/assimp/code/AssetLib/MMD/MMDImporter.o \
-	libs/assimp/code/AssetLib/MMD/MMDPmxParser.o \
-	libs/assimp/contrib/unzip/crypt.o \
-	libs/assimp/contrib/unzip/ioapi.o \
-	libs/assimp/contrib/unzip/unzip.o \
-	libs/assimp/contrib/poly2tri/poly2tri/common/shapes.cc \
-	libs/assimp/contrib/poly2tri/poly2tri/sweep/advancing_front.cc \
-	libs/assimp/contrib/poly2tri/poly2tri/sweep/cdt.cc \
-	libs/assimp/contrib/poly2tri/poly2tri/sweep/sweep.cc \
-	libs/assimp/contrib/poly2tri/poly2tri/sweep/sweep_context.cc \
-	libs/assimp/contrib/clipper/clipper.o \
-	libs/assimp/contrib/openddlparser/code/OpenDDLParser.o \
-	libs/assimp/contrib/openddlparser/code/DDLNode.o \
-	libs/assimp/contrib/openddlparser/code/OpenDDLCommon.o \
-	libs/assimp/contrib/openddlparser/code/OpenDDLExport.o \
-	libs/assimp/contrib/openddlparser/code/Value.o \
-	libs/assimp/contrib/openddlparser/code/OpenDDLStream.o \
-	libs/assimp/contrib/Open3DGC/o3dgcArithmeticCodec.o \
-	libs/assimp/contrib/Open3DGC/o3dgcDynamicVectorDecoder.o \
-	libs/assimp/contrib/Open3DGC/o3dgcDynamicVectorEncoder.o \
-	libs/assimp/contrib/Open3DGC/o3dgcTools.o \
-	libs/assimp/contrib/Open3DGC/o3dgcTriangleFans.o \
-	libs/assimp/contrib/zip/src/zip.o \
-
-libcrnlib.$(A): CPPFLAGS_EXTRA := -Ilibs
-libcrnlib.$(A): \
-	libs/crnlib/crnlib.o \
-
-libddslib.$(A): CPPFLAGS_EXTRA := -Ilibs
-libddslib.$(A): \
-	libs/ddslib/ddslib.o \
-
-libetclib.$(A): CPPFLAGS_EXTRA := -Ilibs
-libetclib.$(A): \
-	libs/etclib.o \
-
-libwebplib.$(A): CPPFLAGS_EXTRA := -Ilibs
-libwebplib.$(A): \
-	libs/webplib/webplib.o \
-
-$(INSTALLDIR)/radiant.$(EXE): LDFLAGS_EXTRA := $(MWINDOWS)
-$(INSTALLDIR)/radiant.$(EXE): LIBS_EXTRA := $(LIBS_GL) $(LIBS_DL) $(LIBS_XML) $(LIBS_GLIB) $(LIBS_QTWIDGETS) $(LIBS_QTSVG) $(LIBS_ZLIB)
+	tools/quake3/q3map2…3380 tokens truncated…XTRA := $(LIBS_GL) $(LIBS_DL) $(LIBS_XML) $(LIBS_GLIB) $(LIBS_QTWIDGETS) $(LIBS_QTSVG) $(LIBS_ZLIB)
 $(INSTALLDIR)/radiant.$(EXE): CPPFLAGS_EXTRA := $(CPPFLAGS_GL) $(CPPFLAGS_DL) $(CPPFLAGS_XML) $(CPPFLAGS_GLIB) $(CPPFLAGS_QTWIDGETS) $(CPPFLAGS_QTSVG) -Ilibs -Iinclude
 $(INSTALLDIR)/radiant.$(EXE): \
 	radiant/autosave.o \

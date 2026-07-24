@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/../.." && pwd)"
+install_dir="${INSTALL_DIR:-$repo_root/install}"
+target_dir="${TARGET_DIR:-$script_dir/target}"
+app="$target_dir/NetRadiant-Custom.app"
+contents="$app/Contents"
+macos_dir="$contents/MacOS"
+frameworks_dir="$contents/Frameworks"
+resources_dir="$contents/Resources"
+arch="$(uname -m)"
+archive="$target_dir/NetRadiant-Custom-macos-$arch.zip"
+qt_prefix="${QT_PREFIX:-$(brew --prefix qt@5)}"
+
+main_binary="$install_dir/radiant.$arch"
+if [[ ! -f "$main_binary" ]]; then
+	echo "Missing $main_binary; build NetRadiant Custom before packaging." >&2
+	exit 1
+fi
+
+if [[ ! -x "$qt_prefix/bin/macdeployqt" ]]; then
+	echo "Required packaging tool '$qt_prefix/bin/macdeployqt' was not found." >&2
+	exit 1
+fi
+
+for tool in dylibbundler otool lipo codesign ditto plutil file; do
+	if ! command -v "$tool" >/dev/null 2>&1; then
+		echo "Required packaging tool '$tool' was not found." >&2
+		exit 1
+	fi
+done
+
+rm -rf "$app"
+rm -f "$archive"
+mkdir -p "$macos_dir" "$resources_dir"
+
+ditto "$install_dir" "$macos_dir"
+rm -f "$macos_dir/radiant"
+mv "$macos_dir/radiant.$arch" "$macos_dir/radiant"
+cp "$script_dir/NetRadiant.app/Contents/Info.plist" "$contents/Info.plist"
+cp "$script_dir/NetRadiant.app/Contents/Resources/radiant.icns" "$resources_dir/radiant.icns"
+chmod +x "$macos_dir/radiant"
+
+is_macho() {
+	file -b "$1" | grep -q 'Mach-O'
+}
+
+qt_args=( "$app" -verbose=2 -no-codesign )
+while IFS= read -r -d '' candidate; do
+	if [[ "$candidate" != "$macos_dir/radiant" ]] && is_macho "$candidate"; then
+		qt_args+=( "-executable=$candidate" )
+	fi
+done < <(find "$macos_dir" -type f -print0)
+"$qt_prefix/bin/macdeployqt" "${qt_args[@]}"
+
+# macdeployqt deploys the Qt frameworks and plugins. Scan the complete result
+# so Homebrew dependencies used by either NetRadiant or Homebrew's Qt build are
+# copied next to those frameworks too.
+dylib_args=(
+	-b
+	-ns
+	-cd
+	-of
+	-i /System/Library
+	-i @executable_path
+	-i @loader_path
+	-i @rpath
+	-d "$frameworks_dir"
+	-p @executable_path/../Frameworks
+)
+while IFS= read -r -d '' candidate; do
+	if is_macho "$candidate"; then
+		dylib_args+=( -x "$candidate" )
+	fi
+done < <(find "$app" -type f -print0)
+dylibbundler "${dylib_args[@]}"
+
+plutil -lint "$contents/Info.plist"
+
+dependency_error=0
+architecture_error=0
+while IFS= read -r -d '' candidate; do
+	if ! is_macho "$candidate"; then
+		continue
+	fi
+
+	if otool -L "$candidate" | grep -E '/(opt/homebrew|usr/local)/' >/dev/null; then
+		echo "Unbundled Homebrew dependency in $candidate:" >&2
+		otool -L "$candidate" | grep -E '/(opt/homebrew|usr/local)/' >&2
+		dependency_error=1
+	fi
+
+	if ! lipo -archs "$candidate" | tr ' ' '\n' | grep -Fx "$arch" >/dev/null; then
+		echo "$candidate does not contain the expected $arch architecture." >&2
+		architecture_error=1
+	fi
+done < <(find "$app" -type f -print0)
+
+if (( dependency_error || architecture_error )); then
+	exit 1
+fi
+
+codesign --force --deep --sign - "$app"
+codesign --verify --deep --strict --verbose=2 "$app"
+
+ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+echo "Created $archive"
