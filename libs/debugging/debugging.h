@@ -38,7 +38,7 @@
 #else
 #include <csignal>
 
-#define DEBUGGER_BREAKPOINT() raise( SIGTRAP );
+#define DEBUGGER_BREAKPOINT() ::raise( SIGTRAP );
 #endif
 
 #define STR( x )  # x
