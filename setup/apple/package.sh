@@ -113,6 +113,15 @@ if (( dependency_error || architecture_error )); then
 	exit 1
 fi
 
+# Files with an executable bit under Contents/MacOS are treated as nested code.
+# The install tree contains executable-marked SVG/XML assets, so normalize all
+# non-Mach-O resources before creating the application signature.
+while IFS= read -r -d '' candidate; do
+	if ! is_macho "$candidate"; then
+		chmod a-x "$candidate"
+	fi
+done < <(find "$app" -type f -print0)
+
 # Sign nested code explicitly instead of using --deep. NetRadiant gamepack
 # directories end in ".game", which codesign --deep mistakes for Apple bundles.
 while IFS= read -r -d '' candidate; do
