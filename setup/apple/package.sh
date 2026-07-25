@@ -37,23 +37,23 @@ rm -rf "$app"
 rm -f "$archive"
 mkdir -p "$macos_dir" "$resources_dir"
 
-ditto "$install_dir" "$macos_dir"
-rm -f "$macos_dir/radiant"
-mv "$macos_dir/radiant.$arch" "$macos_dir/radiant"
+ditto "$install_dir" "$resources_dir"
+rm -f "$resources_dir/radiant"
+mv "$resources_dir/radiant.$arch" "$macos_dir/radiant"
 cp "$script_dir/NetRadiant.app/Contents/Info.plist" "$contents/Info.plist"
 cp "$script_dir/NetRadiant.app/Contents/Resources/radiant.icns" "$resources_dir/radiant.icns"
 chmod +x "$macos_dir/radiant"
 
 is_macho() {
-	file -b "$1" | grep -q 'Mach-O'
+	file -L -b "$1" | grep -q 'Mach-O'
 }
 
 qt_args=( "$app" -verbose=1 )
 while IFS= read -r -d '' candidate; do
-	if [[ "$candidate" != "$macos_dir/radiant" ]] && is_macho "$candidate"; then
+	if is_macho "$candidate"; then
 		qt_args+=( "-executable=$candidate" )
 	fi
-done < <(find "$macos_dir" -type f -print0)
+done < <(find "$resources_dir" -type f -print0)
 "$qt_prefix/bin/macdeployqt" "${qt_args[@]}"
 
 # macdeployqt deploys and rewrites the Qt frameworks and plugins. Seed
@@ -75,7 +75,7 @@ while IFS= read -r -d '' candidate; do
 	if is_macho "$candidate"; then
 		dylib_args+=( -x "$candidate" )
 	fi
-done < <(find "$macos_dir" -type f -print0)
+done < <(find "$macos_dir" "$resources_dir" -type f -print0)
 dylibbundler "${dylib_args[@]}"
 
 plutil -lint "$contents/Info.plist"
@@ -112,15 +112,6 @@ done < <(find "$app" -type f -print0)
 if (( dependency_error || architecture_error )); then
 	exit 1
 fi
-
-# Files with an executable bit under Contents/MacOS are treated as nested code.
-# The install tree contains executable-marked SVG/XML assets, so normalize all
-# non-Mach-O resources before creating the application signature.
-while IFS= read -r -d '' candidate; do
-	if ! is_macho "$candidate"; then
-		chmod a-x "$candidate"
-	fi
-done < <(find "$app" -type f -print0)
 
 # Sign nested code explicitly instead of using --deep. NetRadiant gamepack
 # directories end in ".game", which codesign --deep mistakes for Apple bundles.

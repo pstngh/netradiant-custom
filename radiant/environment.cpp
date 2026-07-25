@@ -257,6 +257,18 @@ void environment_init( int argc, char* argv[] ){
 		// NOTE: we build app path with a trailing '/'
 		// it's a general convention in Radiant to have the slash at the end of directories
 		app_path = PathFilenameless( real );
+#if defined( __APPLE__ )
+		// Keep application data, gamepacks, modules and command-line tools in
+		// the conventional bundle resource directory. Unbundled development
+		// builds continue to load everything beside the executable.
+		const char contents_macos[] = "/Contents/MacOS/";
+		const std::size_t app_path_length = strlen( app_path.c_str() );
+		const std::size_t contents_macos_length = strlen( contents_macos );
+		if ( app_path_length >= contents_macos_length &&
+		     strcmp( app_path.c_str() + app_path_length - contents_macos_length, contents_macos ) == 0 ) {
+			app_path = StringStream( app_path, "../Resources/" );
+		}
+#endif
 	}
 
 	if ( !portable_app_setup() ) {

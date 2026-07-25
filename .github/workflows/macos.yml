@@ -68,10 +68,10 @@ jobs:
 
           app="setup/apple/target/NetRadiant-Custom.app"
           test -x "$app/Contents/MacOS/radiant"
-          test -f "$app/Contents/MacOS/gamepacks/games/mohaa.game"
-          test -f "$app/Contents/MacOS/gamepacks/games/mohaas.game"
-          test -f "$app/Contents/MacOS/gamepacks/games/mohaab.game"
-          entities="$app/Contents/MacOS/gamepacks/mohaa.game/main/entities.def"
+          test -f "$app/Contents/Resources/gamepacks/games/mohaa.game"
+          test -f "$app/Contents/Resources/gamepacks/games/mohaas.game"
+          test -f "$app/Contents/Resources/gamepacks/games/mohaab.game"
+          entities="$app/Contents/Resources/gamepacks/mohaa.game/main/entities.def"
           test -f "$entities"
           test "$(grep -c '/\*QUAKED' "$entities")" -eq 96
 
