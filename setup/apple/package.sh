@@ -87,9 +87,19 @@ while IFS= read -r -d '' candidate; do
 		continue
 	fi
 
-	if otool -L "$candidate" | grep -E '/(opt/homebrew|usr/local)/' >/dev/null; then
+	# otool -L includes a dylib's LC_ID_DYLIB as its first entry. Qt plug-ins
+	# retain their build-time ID, but that ID is not a load dependency.
+	install_id="$(otool -D "$candidate" 2>/dev/null | sed -n '2p' || true)"
+	homebrew_dependencies="$(
+		otool -L "$candidate" |
+			sed -n '2,$p' |
+			awk '{ print $1 }' |
+			grep -E '^/(opt/homebrew|usr/local)/' |
+			grep -Fvx "$install_id" || true
+	)"
+	if [[ -n "$homebrew_dependencies" ]]; then
 		echo "Unbundled Homebrew dependency in $candidate:" >&2
-		otool -L "$candidate" | grep -E '/(opt/homebrew|usr/local)/' >&2
+		echo "$homebrew_dependencies" >&2
 		dependency_error=1
 	fi
 
