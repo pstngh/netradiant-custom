@@ -57,9 +57,8 @@ done < <(find "$macos_dir" -type f -print0)
 "$qt_prefix/bin/macdeployqt" "${qt_args[@]}"
 
 # macdeployqt deploys and rewrites the Qt frameworks and plugins. Seed
-# dylibbundler with NetRadiant's executables and plug-ins plus the deployed Qt
-# plug-ins; it recursively walks their remaining non-system dependencies
-# without reprocessing the complete deployed framework tree.
+# dylibbundler with NetRadiant's executables and plug-ins; it recursively walks
+# their remaining non-system dependencies without reprocessing deployed Qt.
 dylib_args=(
 	-b
 	-ns
@@ -76,7 +75,7 @@ while IFS= read -r -d '' candidate; do
 	if is_macho "$candidate"; then
 		dylib_args+=( -x "$candidate" )
 	fi
-done < <(find "$macos_dir" "$contents/PlugIns" -type f -print0)
+done < <(find "$macos_dir" -type f -print0)
 dylibbundler "${dylib_args[@]}"
 
 plutil -lint "$contents/Info.plist"
@@ -114,8 +113,31 @@ if (( dependency_error || architecture_error )); then
 	exit 1
 fi
 
-codesign --force --deep --sign - "$app"
-codesign --verify --deep --strict --verbose=2 "$app"
+# Sign nested code explicitly instead of using --deep. NetRadiant gamepack
+# directories end in ".game", which codesign --deep mistakes for Apple bundles.
+while IFS= read -r -d '' candidate; do
+	if is_macho "$candidate"; then
+		codesign --force --sign - "$candidate"
+	fi
+done < <(find "$app" -type f -print0)
+
+while IFS= read -r -d '' framework; do
+	codesign --force --sign - "$framework"
+done < <(find "$frameworks_dir" -type d -name '*.framework' -prune -print0)
+
+codesign --force --sign - "$app"
+
+while IFS= read -r -d '' candidate; do
+	if is_macho "$candidate"; then
+		codesign --verify --strict --verbose=2 "$candidate"
+	fi
+done < <(find "$app" -type f -print0)
+
+while IFS= read -r -d '' framework; do
+	codesign --verify --strict --verbose=2 "$framework"
+done < <(find "$frameworks_dir" -type d -name '*.framework' -prune -print0)
+
+codesign --verify --strict --verbose=2 "$app"
 
 ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
 echo "Created $archive"
