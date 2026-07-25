@@ -48,7 +48,7 @@ is_macho() {
 	file -b "$1" | grep -q 'Mach-O'
 }
 
-qt_args=( "$app" -verbose=2 )
+qt_args=( "$app" -verbose=1 )
 while IFS= read -r -d '' candidate; do
 	if [[ "$candidate" != "$macos_dir/radiant" ]] && is_macho "$candidate"; then
 		qt_args+=( "-executable=$candidate" )
@@ -56,9 +56,9 @@ while IFS= read -r -d '' candidate; do
 done < <(find "$macos_dir" -type f -print0)
 "$qt_prefix/bin/macdeployqt" "${qt_args[@]}"
 
-# macdeployqt deploys the Qt frameworks and plugins. Scan the complete result
-# so Homebrew dependencies used by either NetRadiant or Homebrew's Qt build are
-# copied next to those frameworks too.
+# macdeployqt deploys and rewrites the Qt frameworks and plugins. Seed
+# dylibbundler with NetRadiant's executables and plug-ins; it recursively walks
+# their remaining non-system dependencies without reprocessing deployed Qt.
 dylib_args=(
 	-b
 	-ns
@@ -75,7 +75,7 @@ while IFS= read -r -d '' candidate; do
 	if is_macho "$candidate"; then
 		dylib_args+=( -x "$candidate" )
 	fi
-done < <(find "$app" -type f -print0)
+done < <(find "$macos_dir" -type f -print0)
 dylibbundler "${dylib_args[@]}"
 
 plutil -lint "$contents/Info.plist"
