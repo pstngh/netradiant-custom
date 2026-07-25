@@ -57,8 +57,9 @@ done < <(find "$macos_dir" -type f -print0)
 "$qt_prefix/bin/macdeployqt" "${qt_args[@]}"
 
 # macdeployqt deploys and rewrites the Qt frameworks and plugins. Seed
-# dylibbundler with NetRadiant's executables and plug-ins; it recursively walks
-# their remaining non-system dependencies without reprocessing deployed Qt.
+# dylibbundler with NetRadiant's executables and plug-ins plus the deployed Qt
+# plug-ins; it recursively walks their remaining non-system dependencies
+# without reprocessing the complete deployed framework tree.
 dylib_args=(
 	-b
 	-ns
@@ -75,7 +76,7 @@ while IFS= read -r -d '' candidate; do
 	if is_macho "$candidate"; then
 		dylib_args+=( -x "$candidate" )
 	fi
-done < <(find "$macos_dir" -type f -print0)
+done < <(find "$macos_dir" "$contents/PlugIns" -type f -print0)
 dylibbundler "${dylib_args[@]}"
 
 plutil -lint "$contents/Info.plist"
