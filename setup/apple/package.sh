@@ -48,7 +48,7 @@ is_macho() {
 	file -b "$1" | grep -q 'Mach-O'
 }
 
-qt_args=( "$app" -verbose=2 -no-codesign )
+qt_args=( "$app" -verbose=2 )
 while IFS= read -r -d '' candidate; do
 	if [[ "$candidate" != "$macos_dir/radiant" ]] && is_macho "$candidate"; then
 		qt_args+=( "-executable=$candidate" )
