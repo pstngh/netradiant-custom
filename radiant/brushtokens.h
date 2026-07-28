@@ -33,6 +33,14 @@ inline bool FaceShader_importContentsFlagsValue( FaceShader& faceShader, Tokenis
 	return true;
 }
 
+inline void FaceShader_importMapExtensions( FaceShader& faceShader, Tokeniser& tokeniser ){
+	faceShader.m_mapExtensions.clear();
+	while ( Tokeniser_inlineTokenAvailable( tokeniser ) )
+	{
+		faceShader.m_mapExtensions.emplace_back( tokeniser.getToken() );
+	}
+}
+
 inline bool FaceTexdef_importTokens( FaceTexdef& texdef, Tokeniser& tokeniser ){
 	// parse texdef
 	RETURN_FALSE_IF_FAIL( Tokeniser_getFloat( tokeniser, texdef.m_projection.m_texdef.shift[0] ) );
@@ -211,6 +219,7 @@ public:
 			m_face.getShader().m_flags.m_specified = true; // enable for Q2
 			RETURN_FALSE_IF_FAIL( FaceShader_importContentsFlagsValue( m_face.getShader(), tokeniser ) );
 		}
+		FaceShader_importMapExtensions( m_face.getShader(), tokeniser );
 		m_face.getTexdef().m_scaleApplied = true;
 		return true;
 	}
@@ -230,6 +239,7 @@ public:
 			m_face.getShader().m_flags.m_specified = true; // enable for Q2
 			RETURN_FALSE_IF_FAIL( FaceShader_importContentsFlagsValue( m_face.getShader(), tokeniser ) );
 		}
+		FaceShader_importMapExtensions( m_face.getShader(), tokeniser );
 
 		m_face.getTexdef().m_projectionInitialised = true;
 		m_face.getTexdef().m_scaleApplied = true;
@@ -252,6 +262,7 @@ public:
 			m_face.getShader().m_flags.m_specified = true; // enable for Q2
 			RETURN_FALSE_IF_FAIL( FaceShader_importContentsFlagsValue( m_face.getShader(), tokeniser ) );
 		}
+		FaceShader_importMapExtensions( m_face.getShader(), tokeniser );
 		m_face.getTexdef().m_scaleApplied = true;
 		return true;
 	}
@@ -342,6 +353,13 @@ inline void FaceShader_ContentsFlagsValue_exportTokens( const FaceShader& faceSh
 	writer.writeInteger( faceShader.m_flags.m_value );
 }
 
+inline void FaceShader_MapExtensions_exportTokens( const FaceShader& faceShader, TokenWriter& writer ){
+	for ( const CopiedString& token : faceShader.m_mapExtensions )
+	{
+		writer.writeToken( token.c_str() );
+	}
+}
+
 inline void FaceShader_exportTokens( const FaceShader& faceShader, TokenWriter& writer ){
 	// write shader name
 	if ( string_empty( shader_get_textureName( faceShader.getShader() ) ) ) {
@@ -423,6 +441,7 @@ public:
 		FaceShader_exportTokens( m_face.getShader(), writer );
 		FaceTexdef_exportTokens( m_face.getTexdef(), writer );
 		FaceFlags_exportTokens<exportFlags>( m_face, writer );
+		FaceShader_MapExtensions_exportTokens( m_face.getShader(), writer );
 		writer.nextLine();
 	}
 };
@@ -439,6 +458,7 @@ public:
 		FaceTexdef_BP_exportTokens( m_face.getTexdef(), writer );
 		FaceShader_exportTokens( m_face.getShader(), writer );
 		FaceFlags_exportTokens<exportFlags>( m_face, writer );
+		FaceShader_MapExtensions_exportTokens( m_face.getShader(), writer );
 		writer.nextLine();
 	}
 };
@@ -455,6 +475,7 @@ public:
 		FaceShader_exportTokens( m_face.getShader(), writer );
 		FaceTexdef_Valve220_exportTokens( m_face.getTexdef(), writer );
 		FaceFlags_exportTokens<exportFlags>( m_face, writer );
+		FaceShader_MapExtensions_exportTokens( m_face.getShader(), writer );
 		writer.nextLine();
 	}
 };

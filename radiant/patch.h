@@ -365,7 +365,8 @@ class Patch final :
 		    const char* shader,
 		    bool patchDef3,
 		    std::size_t subdivisions_x,
-		    std::size_t subdivisions_y
+		    std::size_t subdivisions_y,
+		    const std::vector<CopiedString>& mapParamsExtension
 		) :
 			m_width( width ),
 			m_height( height ),
@@ -373,7 +374,8 @@ class Patch final :
 			m_ctrl( ctrl ),
 			m_patchDef3( patchDef3 ),
 			m_subdivisions_x( subdivisions_x ),
-			m_subdivisions_y( subdivisions_y ){
+			m_subdivisions_y( subdivisions_y ),
+			m_mapParamsExtension( mapParamsExtension ){
 		}
 
 		void release() override {
@@ -386,6 +388,7 @@ class Patch final :
 		bool m_patchDef3;
 		std::size_t m_subdivisions_x;
 		std::size_t m_subdivisions_y;
+		std::vector<CopiedString> m_mapParamsExtension;
 	};
 
 public:
@@ -412,6 +415,7 @@ public:
 	bool m_patchDef3;
 	std::size_t m_subdivisions_x;
 	std::size_t m_subdivisions_y;
+	std::vector<CopiedString> m_mapParamsExtension;
 private:
 
 	UndoObserver* m_undoable_observer;
@@ -446,6 +450,7 @@ private:
 		m_patchDef3 = false;
 		m_subdivisions_x = 0;
 		m_subdivisions_y = 0;
+		m_mapParamsExtension.clear();
 
 		check_shader();
 		captureShader();
@@ -495,6 +500,7 @@ public:
 		m_patchDef3 = other.m_patchDef3;
 		m_subdivisions_x = other.m_subdivisions_x;
 		m_subdivisions_y = other.m_subdivisions_y;
+		m_mapParamsExtension = other.m_mapParamsExtension;
 		setDims( other.m_width, other.m_height );
 		copy_ctrl( m_ctrl.data(), other.m_ctrl.data(), other.m_ctrl.data() + ( m_width * m_height ) );
 		SetShader( other.m_shader.c_str() );
@@ -527,6 +533,7 @@ public:
 		m_patchDef3 = other.m_patchDef3;
 		m_subdivisions_x = other.m_subdivisions_x;
 		m_subdivisions_y = other.m_subdivisions_y;
+		m_mapParamsExtension = other.m_mapParamsExtension;
 		setDims( other.m_width, other.m_height );
 		copy_ctrl( m_ctrl.data(), other.m_ctrl.data(), other.m_ctrl.data() + ( m_width * m_height ) );
 		SetShader( other.m_shader.c_str() );
@@ -932,7 +939,7 @@ public:
 	}
 
 	UndoMemento* exportState() const override {
-		return new SavedState( m_width, m_height, m_ctrl, m_shader.c_str(), m_patchDef3, m_subdivisions_x, m_subdivisions_y );
+		return new SavedState( m_width, m_height, m_ctrl, m_shader.c_str(), m_patchDef3, m_subdivisions_x, m_subdivisions_y, m_mapParamsExtension );
 	}
 	void importState( const UndoMemento* state ) override {
 		undoSave();
@@ -951,6 +958,7 @@ public:
 			m_patchDef3 = other.m_patchDef3;
 			m_subdivisions_x = other.m_subdivisions_x;
 			m_subdivisions_y = other.m_subdivisions_y;
+			m_mapParamsExtension = other.m_mapParamsExtension;
 		}
 
 		// end duplicate code
@@ -1070,7 +1078,21 @@ inline bool Patch_importParams( Patch& patch, Tokeniser& tokeniser ){
 	RETURN_FALSE_IF_FAIL( Tokeniser_getInteger( tokeniser, tmp ) );
 	RETURN_FALSE_IF_FAIL( Tokeniser_getInteger( tokeniser, tmp ) );
 
-	RETURN_FALSE_IF_FAIL( Tokeniser_parseToken( tokeniser, ")" ) );
+	// MOHAA patchDef2 primitives may append fields such as
+	// "subdivisions 16.018543". Preserve unknown parameters verbatim so a
+	// load/save cycle does not discard compiler-relevant map data.
+	patch.m_mapParamsExtension.clear();
+	for ( const char* token = tokeniser.getToken(); ; token = tokeniser.getToken() )
+	{
+		if ( token == nullptr ) {
+			Tokeniser_unexpectedError( tokeniser, token, ")" );
+			return false;
+		}
+		if ( string_equal( token, ")" ) ) {
+			break;
+		}
+		patch.m_mapParamsExtension.emplace_back( token );
+	}
 	return true;
 }
 
@@ -1193,6 +1215,10 @@ inline void Patch_exportParams( const Patch& patch, TokenWriter& writer ){
 	writer.writeInteger( 0 );
 	writer.writeInteger( 0 );
 	writer.writeInteger( 0 );
+	for ( const CopiedString& token : patch.m_mapParamsExtension )
+	{
+		writer.writeToken( token.c_str() );
+	}
 	writer.writeToken( ")" );
 	writer.nextLine();
 }

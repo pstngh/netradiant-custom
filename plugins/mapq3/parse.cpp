@@ -21,7 +21,9 @@
 
 #include "parse.h"
 
+#include <cstring>
 #include <list>
+#include <vector>
 
 #include "ientity.h"
 #include "ibrush.h"
@@ -29,10 +31,137 @@
 #include "ieclass.h"
 #include "iscriplib.h"
 #include "scenelib.h"
+#include "instancelib.h"
 #include "string/string.h"
 #include "stringio.h"
 #include "eclasslib.h"
 #include "layers.h"
+
+class OpaqueMapPrimitiveNode final :
+	public scene::Node::Symbiot,
+	public scene::Instantiable,
+	public scene::Cloneable,
+	public MapImporter,
+	public MapExporter
+{
+	class TypeCasts
+	{
+		NodeTypeCastTable m_casts;
+	public:
+		TypeCasts(){
+			NodeStaticCast<OpaqueMapPrimitiveNode, scene::Instantiable>::install( m_casts );
+			NodeStaticCast<OpaqueMapPrimitiveNode, scene::Cloneable>::install( m_casts );
+			NodeStaticCast<OpaqueMapPrimitiveNode, MapImporter>::install( m_casts );
+			NodeStaticCast<OpaqueMapPrimitiveNode, MapExporter>::install( m_casts );
+		}
+		NodeTypeCastTable& get(){
+			return m_casts;
+		}
+	};
+
+	scene::Node m_node;
+	InstanceSet m_instances;
+	InstanceTypeCastTable m_instanceCasts;
+	CopiedString m_type;
+	std::vector<CopiedString> m_tokens;
+
+public:
+	typedef LazyStatic<TypeCasts> StaticTypeCasts;
+
+	OpaqueMapPrimitiveNode( const char* type ) :
+		m_node( this, this, StaticTypeCasts::instance().get(), GlobalSceneGraph().currentLayer() ),
+		m_type( type ){
+	}
+	OpaqueMapPrimitiveNode( const OpaqueMapPrimitiveNode& other ) :
+		scene::Node::Symbiot( other ),
+		scene::Instantiable( other ),
+		scene::Cloneable( other ),
+		MapImporter( other ),
+		MapExporter( other ),
+		m_node( this, this, StaticTypeCasts::instance().get(), other.m_node.m_layer ),
+		m_type( other.m_type ),
+		m_tokens( other.m_tokens ){
+	}
+	void release() override {
+		delete this;
+	}
+	scene::Node& node(){
+		return m_node;
+	}
+	scene::Node& clone() const override {
+		return ( new OpaqueMapPrimitiveNode( *this ) )->node();
+	}
+
+	scene::Instance* create( const scene::Path& path, scene::Instance* parent ) override {
+		return new scene::Instance( path, parent, this, m_instanceCasts );
+	}
+	void forEachInstance( const scene::Instantiable::Visitor& visitor ) override {
+		m_instances.forEachInstance( visitor );
+	}
+	void insert( scene::Instantiable::Observer* observer, const scene::Path& path, scene::Instance* instance ) override {
+		m_instances.insert( observer, path, instance );
+	}
+	scene::Instance* erase( scene::Instantiable::Observer* observer, const scene::Path& path ) override {
+		return m_instances.erase( observer, path );
+	}
+
+	bool importTokens( Tokeniser& tokeniser ) override {
+		m_tokens.clear();
+
+		tokeniser.nextLine();
+		const char* token = tokeniser.getToken();
+		if ( !string_equal( token, "{" ) ) {
+			Tokeniser_unexpectedError( tokeniser, token, "{" );
+			return false;
+		}
+
+		int depth = 1;
+		m_tokens.emplace_back( token );
+		while ( depth != 0 )
+		{
+			tokeniser.nextLine();
+			token = tokeniser.getToken();
+			if ( token == nullptr ) {
+				Tokeniser_unexpectedError( tokeniser, token, "}" );
+				return false;
+			}
+			if ( string_equal( token, "{" ) ) {
+				++depth;
+			}
+			else if ( string_equal( token, "}" ) ) {
+				--depth;
+			}
+			m_tokens.emplace_back( token );
+		}
+
+		tokeniser.nextLine();
+		return Tokeniser_parseToken( tokeniser, "}" );
+	}
+
+	void exportTokens( TokenWriter& writer ) const override {
+		writer.writeToken( "{" );
+		writer.nextLine();
+		writer.writeToken( m_type.c_str() );
+		writer.nextLine();
+		for ( const CopiedString& token : m_tokens )
+		{
+			if ( strpbrk( token.c_str(), " \t" ) != nullptr ) {
+				writer.writeString( token.c_str() );
+			}
+			else
+			{
+				writer.writeToken( token.c_str() );
+			}
+			writer.nextLine();
+		}
+		writer.writeToken( "}" );
+		writer.nextLine();
+	}
+};
+
+scene::Node& NewOpaqueMapPrimitive( const char* type ){
+	return ( new OpaqueMapPrimitiveNode( type ) )->node();
+}
 
 class LayersParser
 {

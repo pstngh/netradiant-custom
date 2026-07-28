@@ -248,6 +248,10 @@ public:
 			if ( string_equal( primitive, "patchDef2" ) ) {
 				return GlobalPatchModule::getTable().createPatch();
 			}
+			if ( string_equal( primitive, "terrainDef" ) ) {
+				globalWarningStream() << "Preserving unsupported terrainDef primitive without rendering it\n";
+				return NewOpaqueMapPrimitive( primitive );
+			}
 			if( !m_formatDetected ){
 				EBrushType detectedFormat;
 				if ( string_equal( primitive, "brushDef" ) ) {

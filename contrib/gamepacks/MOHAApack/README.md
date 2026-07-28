@@ -13,7 +13,8 @@ launchers.
 
 ## Current support
 
-- Quake 3-style textual `.map` loading and saving
+- MOHAA textual `.map` loading and saving, including extended brush-face
+  metadata and patch subdivision parameters
 - PK3 archives
 - TGA, JPEG, and PNG textures
 - Quake 3-style shader scripts
@@ -26,6 +27,10 @@ MOHAA BSP compilation is not enabled in the default build menu. MOHAA uses the
 `2015` BSP identifier and versions 17 through 21, with MOH-specific terrain,
 static-model, and lighting lumps. NetRadiant Custom's bundled `q3map2` writes
 Quake 3 `IBSP` files and must not be presented as a compatible compiler.
+
+MOHAA `terrainDef` primitives are preserved when loading and saving maps, but
+they are not rendered or editable yet. Brushes, entities, and `patchDef2`
+primitives in the same map remain available for normal editing.
 
 TIKI/SKD model previews and FTX texture previews are also not implemented yet.
 Those formats remain usable as entity key values, but Radiant displays the
