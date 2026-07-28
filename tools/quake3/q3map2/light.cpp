@@ -1459,7 +1459,8 @@ struct contribution_t
 static void TraceGrid( int num ){
 	int i, j, x, y, z, mod, numCon, numStyles;
 	Vector3 cheapColor, thisdir;
-	contribution_t contributions[ MAX_CONTRIBUTIONS ];
+	/* Keep this large scratch buffer off macOS worker-thread stacks. */
+	static thread_local std::vector<contribution_t> contributions( MAX_CONTRIBUTIONS );
 	trace_t trace;
 
 	/* get grid points */
