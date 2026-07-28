@@ -317,7 +317,7 @@ static bool packBSPOnly(
 		const CopiedString mapName( PathFilename( bsp.c_str() ) );
 		for ( const CopiedString& existing : mapNames )
 		{
-			if ( striEqual( existing, mapName ) ) {
+			if ( striEqual( existing.c_str(), mapName.c_str() ) ) {
 				Sys_FPrintf(
 				    SYS_ERR,
 				    "Multiple BSP inputs would create the same archive path: maps/%s.bsp\n",
