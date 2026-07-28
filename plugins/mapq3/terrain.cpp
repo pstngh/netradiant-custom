@@ -28,6 +28,7 @@
 #include "instancelib.h"
 #include "mapfile.h"
 #include "math/aabb.h"
+#include "math/frustum.h"
 #include "math/matrix.h"
 #include "math/vector.h"
 #include "render.h"
@@ -35,6 +36,7 @@
 #include "scenelib.h"
 #include "selectionlib.h"
 #include "selectable.h"
+#include "shaderlib.h"
 #include "string/string.h"
 #include "stringio.h"
 #include "texturelib.h"
@@ -403,9 +405,13 @@ public:
 		}
 
 		tokeniser.nextLine();
-		RETURN_FALSE_IF_FAIL( Tokeniser_getDouble( tokeniser, m_origin.x() ) );
-		RETURN_FALSE_IF_FAIL( Tokeniser_getDouble( tokeniser, m_origin.y() ) );
-		RETURN_FALSE_IF_FAIL( Tokeniser_getDouble( tokeniser, m_origin.z() ) );
+		double originX;
+		double originY;
+		double originZ;
+		RETURN_FALSE_IF_FAIL( Tokeniser_getDouble( tokeniser, originX ) );
+		RETURN_FALSE_IF_FAIL( Tokeniser_getDouble( tokeniser, originY ) );
+		RETURN_FALSE_IF_FAIL( Tokeniser_getDouble( tokeniser, originZ ) );
+		m_origin = Vector3( originX, originY, originZ );
 
 		tokeniser.nextLine();
 		RETURN_FALSE_IF_FAIL( Tokeniser_parseToken( tokeniser, "{" ) );
@@ -755,6 +761,8 @@ class MOHAATerrainInstance final :
 
 public:
 	typedef LazyStatic<TypeCasts> StaticTypeCasts;
+
+	STRING_CONSTANT( Name, "MOHAATerrainInstance" );
 
 	MOHAATerrainInstance( const scene::Path& path, scene::Instance* parent, MOHAATerrain& terrain )
 		: Instance( path, parent, this, StaticTypeCasts::instance().get() ),
