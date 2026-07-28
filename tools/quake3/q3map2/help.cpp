@@ -404,7 +404,9 @@ static void HelpPk3()
 	const std::vector<HelpOption> options = {
 		{ "-pk3 [options] <filename.bsp .. filenameN.bsp>", "Creates a pk3 for the BSP(s) (complete Q3 support). Using file 'gamename.exclude' to exclude vanilla game resources." },
 		{ "-complevel <N>", "Set compression level (-1 .. 10); 0 = uncompressed, -1 = 6, 10 = ultra zlib incompatible preset" },
+		{ "-bsp-only", "Create a deployable map PK3 containing BSP files and matching .scr, .aas, and .arena companions without copying game assets" },
 		{ "-dbg", "Print wall of debug text, useful for .exclude file creation" },
+		{ "-output <filename.pk3>, -o <filename.pk3>", "Set the output path (especially useful with -bsp-only)" },
 		{ "-png", "include png textures, at highest priority; taking tga, jpg by default" },
 	};
 

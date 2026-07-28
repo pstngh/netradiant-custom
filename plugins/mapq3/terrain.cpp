@@ -37,6 +37,7 @@
 #include "selectionlib.h"
 #include "selectable.h"
 #include "shaderlib.h"
+#include "stream/stringstream.h"
 #include "string/string.h"
 #include "stringio.h"
 #include "texturelib.h"

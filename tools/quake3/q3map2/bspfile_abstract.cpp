@@ -212,9 +212,14 @@ void LoadBSPFilePartially( const char *filename ){
 		Error( "LoadBSPFile: unsupported BSP file format" );
 	}
 
-	/* load it, then byte swap the in-memory version */
-	//g_game->load( filename );
-	LoadIBSPorRBSPFilePartially( filename );
+	/* MOHAA has a different header and lump order, so use its native loader. */
+	if ( strEqual( g_game->arg, "mohaa" ) ) {
+		g_game->load( filename );
+	}
+	else
+	{
+		LoadIBSPorRBSPFilePartially( filename );
+	}
 	SwapBSPFile();
 }
 

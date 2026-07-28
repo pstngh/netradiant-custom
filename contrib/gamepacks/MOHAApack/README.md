@@ -15,26 +15,47 @@ launchers.
 
 - MOHAA textual `.map` loading and saving, including extended brush-face
   metadata and patch subdivision parameters
+- MOHAA `terrainDef` rendering, selection, vertex-height editing, and
+  lossless metadata round-tripping
+- Native `2015` version 19 BSP, VIS, and light compilation with the bundled
+  `q3map2`
+- Fast-test and final build-menu presets, with optional direct PK3 deployment
 - PK3 archives
 - TGA, JPEG, and PNG textures
 - Quake 3-style shader scripts
 - 96 entity definitions generated from OpenMoHAA's game source
 - Correct OpenMoHAA user-data prefix on macOS
 
+## Building and deploying
+
+The Build menu provides:
+
+- **MOHAA: Fast test** — BSP, fast VIS, and fast lighting
+- **MOHAA: Fast test + PK3** — the fast build followed by PK3 deployment
+- **MOHAA: Final + PK3** — full VIS, higher-quality lighting, and PK3 deployment
+
+PK3 builds are written to the selected game directory as
+`main/<mapname>.pk3`, `mainta/<mapname>.pk3`, or `maintt/<mapname>.pk3`.
+They contain `maps/<mapname>.bsp` and also include same-name `.scr`, `.aas`,
+and `.arena` files found beside the BSP. Installed stock data and assets from
+other PK3s remain external, avoiding a large duplicate copy of the game data.
+
+The compiler writes the MOHAA `2015` header and version 19 lumps accepted by
+OpenMoHAA. `terrainDef` grids are converted to textured, collidable detail
+geometry during compilation. This deliberately favors compatibility over the
+original engine's specialized terrain LOD lump.
+
 ## Deliberate limitations
-
-MOHAA BSP compilation is not enabled in the default build menu. MOHAA uses the
-`2015` BSP identifier and versions 17 through 21, with MOH-specific terrain,
-static-model, and lighting lumps. NetRadiant Custom's bundled `q3map2` writes
-Quake 3 `IBSP` files and must not be presented as a compatible compiler.
-
-MOHAA `terrainDef` primitives are preserved when loading and saving maps, but
-they are not rendered or editable yet. Brushes, entities, and `patchDef2`
-primitives in the same map remain available for normal editing.
 
 TIKI/SKD model previews and FTX texture previews are also not implemented yet.
 Those formats remain usable as entity key values, but Radiant displays the
 entity box instead of the game model.
+
+The first compiler version does not emit native MOHAA terrain-LOD,
+static-model, spherical-light, or compressed light-grid lumps. Terrain still
+renders and collides through ordinary BSP geometry, and surface lightmaps are
+written normally. The generated BSPs target OpenMoHAA first; compatibility
+with every original EA executable is not yet guaranteed.
 
 Select the directory that contains the chosen OpenMoHAA launcher when Radiant
 asks for the engine path. The default macOS location is

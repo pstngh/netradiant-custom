@@ -283,6 +283,63 @@ static bool packTexture( const char* texname, const char* packname, const int co
 	return false;
 }
 
+static bool packBSPOnly(
+    const std::vector<CopiedString>& bspList,
+    const char* output,
+    const int compLevel ){
+	if ( FileExists( output ) && remove( output ) != 0 ) {
+		Error( "Unable to replace existing PK3 \"%s\"", output );
+	}
+
+	struct Companion
+	{
+		const char* extension;
+		const char* archiveDirectory;
+	};
+	constexpr Companion companions[] = {
+		{ ".scr", "maps/" },
+		{ ".aas", "maps/" },
+		{ ".arena", "scripts/" },
+	};
+
+	StringOutputStream stream( 256 );
+	for ( const CopiedString& bsp : bspList )
+	{
+		if ( !FileExists( bsp.c_str() ) ) {
+			Sys_FPrintf( SYS_ERR, "BSP does not exist: %s\n", bsp.c_str() );
+			return false;
+		}
+
+		const CopiedString mapName( PathFilename( bsp.c_str() ) );
+		const CopiedString bspArchiveName( stream( "maps/", mapName, ".bsp" ) );
+		if ( !vfsPackFile_Absolute_Path( bsp.c_str(), bspArchiveName.c_str(), output, compLevel ) ) {
+			Sys_FPrintf( SYS_ERR, "Unable to add %s to %s\n", bsp.c_str(), output );
+			return false;
+		}
+		Sys_Printf( "++%s\n", bspArchiveName.c_str() );
+
+		for ( const Companion& companion : companions )
+		{
+			const CopiedString source( stream( PathExtensionless( bsp.c_str() ), companion.extension ) );
+			if ( !FileExists( source.c_str() ) ) {
+				continue;
+			}
+
+			const CopiedString archiveName(
+			    stream( companion.archiveDirectory, mapName, companion.extension )
+			);
+			if ( !vfsPackFile_Absolute_Path( source.c_str(), archiveName.c_str(), output, compLevel ) ) {
+				Sys_FPrintf( SYS_ERR, "Unable to add %s to %s\n", source.c_str(), output );
+				return false;
+			}
+			Sys_Printf( "++%s\n", archiveName.c_str() );
+		}
+	}
+
+	Sys_Printf( "\nSaved deployable map PK3 to %s\n", output );
+	return true;
+}
+
 
 
 
@@ -293,7 +350,8 @@ static bool packTexture( const char* texname, const char* packname, const int co
 
 int pk3BSPMain( Args& args ){
 	int compLevel = 9; // MZ_BEST_COMPRESSION; MZ_UBER_COMPRESSION : not zlib compatible, and may be very slow
-	bool dbg = false, png = false, packFAIL = false;
+	bool dbg = false, png = false, packFAIL = false, bspOnly = false;
+	CopiedString output;
 	StringOutputStream stream( 256 );
 
 	/* process arguments */
@@ -304,6 +362,12 @@ int pk3BSPMain( Args& args ){
 		}
 		if ( args.takeArg( "-png" ) ) {
 			png = true;
+		}
+		if ( args.takeArg( "-bsp-only" ) ) {
+			bspOnly = true;
+		}
+		if ( args.takeArg( "-output", "-o" ) ) {
+			output = args.takeNext();
 		}
 		if ( args.takeArg( "-complevel" ) ) {
 			compLevel = std::clamp( atoi( args.takeNext() ), -1, 10 );
@@ -320,6 +384,13 @@ int pk3BSPMain( Args& args ){
 		bspList.emplace_back( stream( PathExtensionless( ExpandArg( args.takeFront() ) ), ".bsp" ) );
 	}
 	bspList.emplace_back( stream( PathExtensionless( ExpandArg( fileName ) ), ".bsp" ) );
+
+	if ( bspOnly ) {
+		if ( output.empty() ) {
+			output = stream( g_enginePath, g_game->gamePath, '/', nameOFpack, ".pk3" );
+		}
+		return packBSPOnly( bspList, output.c_str(), compLevel ) ? 0 : 1;
+	}
 
 	/* parse bsps */
 	StrList pk3Shaders;
@@ -991,4 +1062,3 @@ int repackBSPMain( Args& args ){
 	/* return to sender */
 	return 0;
 }
-
