@@ -1100,7 +1100,7 @@ $(INSTALLDIR)/modules/imagepng.$(DLL): CPPFLAGS_EXTRA := $(CPPFLAGS_PNG) -Ilibs 
 $(INSTALLDIR)/modules/imagepng.$(DLL): \
 	plugins/imagepng/plugin.o \
 
-$(INSTALLDIR)/modules/mapq3.$(DLL): CPPFLAGS_EXTRA := -Ilibs -Iinclude
+$(INSTALLDIR)/modules/mapq3.$(DLL): CPPFLAGS_EXTRA := -Ilibs -Iinclude $(CPPFLAGS_QTGUI)
 $(INSTALLDIR)/modules/mapq3.$(DLL): \
 	plugins/mapq3/parse.o \
 	plugins/mapq3/plugin.o \
