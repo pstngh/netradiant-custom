@@ -71,6 +71,7 @@ jobs:
           pk3="$smoke_root/main/mohaa_smoke.pk3"
           truncated_bsp="$smoke_root/main/maps/mohaa_truncated.bsp"
           invalid_lump_bsp="$smoke_root/main/maps/mohaa_invalid_lump.bsp"
+          invalid_reference_bsp="$smoke_root/main/maps/mohaa_invalid_reference.bsp"
           q3map2="install/q3map2.arm64"
 
           mkdir -p "$smoke_root/main/maps" "$smoke_root/main/scripts"
@@ -101,6 +102,16 @@ jobs:
             exit 1
           fi
           grep -q "extends past end of file" "$RUNNER_TEMP/invalid-lump.log"
+
+          cp "$bsp" "$invalid_reference_bsp"
+          surface_offset="$(od -An -tu4 -j36 -N4 "$invalid_reference_bsp" | tr -d ' ')"
+          test "$surface_offset" -gt 0
+          printf '\377\377\377\177' | dd of="$invalid_reference_bsp" bs=1 seek="$surface_offset" conv=notrunc status=none
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis "$invalid_reference_bsp" >"$RUNNER_TEMP/invalid-reference.log" 2>&1; then
+            echo "q3map2 unexpectedly accepted an invalid MOHAA BSP cross-reference"
+            exit 1
+          fi
+          grep -q "draw surface 0 has invalid shader index" "$RUNNER_TEMP/invalid-reference.log"
 
           printf 'previous known-good archive\n' >"$pk3"
           previous_pk3_hash="$(shasum -a 256 "$pk3" | cut -d' ' -f1)"

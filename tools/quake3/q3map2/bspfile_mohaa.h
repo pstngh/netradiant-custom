@@ -12,5 +12,5 @@
 #pragma once
 
 void LoadMOHAABSPFile( const char *filename );
+void ValidateMOHAABSPFile( const char *context );
 void WriteMOHAABSPFile( const char *filename );
-

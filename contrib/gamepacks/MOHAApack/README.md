@@ -46,8 +46,9 @@ The compiler writes the MOHAA `2015` header and version 19 lumps accepted by
 OpenMoHAA. `terrainDef` grids are converted to textured, collidable detail
 geometry during compilation. This deliberately favors compatibility over the
 original engine's specialized terrain LOD lump. The loader rejects truncated,
-out-of-bounds, or over-limit MOHAA BSP data with an error instead of reading
-past the file buffer or emitting a BSP beyond OpenMoHAA's documented limits.
+out-of-bounds, structurally inconsistent, or over-limit MOHAA BSP data with an
+error instead of reading past the file buffer, following invalid cross-lump
+indexes, or emitting a BSP beyond OpenMoHAA's documented limits.
 
 ## Deliberate limitations
 

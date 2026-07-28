@@ -274,7 +274,7 @@ void ValidateMOHAALimits(){
 	ValidateMOHAACount( "draw surfaces", bspDrawSurfaces.size(), 0x20000 );
 	ValidateMOHAACount( "draw vertices", bspDrawVerts.size(), 0x80000 );
 	ValidateMOHAACount( "draw indexes", bspDrawIndexes.size(), 0x80000 );
-	ValidateMOHAACount( "entity bytes", bspEntData.size(), 0x40000 );
+	ValidateMOHAACount( "entity bytes", bspEntData.size(), 0x100000 );
 	ValidateMOHAACount( "visibility bytes", bspVisBytes.size(), 0x200000 );
 	ValidateMOHAACount( "lightmap bytes", bspLightBytes.size(), 0x800000 );
 }
@@ -333,6 +333,239 @@ void CopyMOHAALump(
 		data.push_back( static_cast<Destination>( source ) );
 	}
 }
+}
+
+void ValidateMOHAABSPFile( const char *context ){
+	const auto validateRange = [context](
+	    const char* owner,
+	    std::size_t ownerIndex,
+	    const char* target,
+	    int first,
+	    int count,
+	    std::size_t targetSize ){
+		if ( first < 0 || count < 0 ||
+		     static_cast<std::size_t>( first ) > targetSize ||
+		     static_cast<std::size_t>( count ) > targetSize - static_cast<std::size_t>( first ) ) {
+			Error(
+			    "%s: %s %zu has invalid %s range (%d + %d, total %zu)",
+			    context, owner, ownerIndex, target, first, count, targetSize
+			);
+		}
+	};
+	const auto validateIndex = [context](
+	    const char* owner,
+	    std::size_t ownerIndex,
+	    const char* target,
+	    int index,
+	    std::size_t targetSize ){
+		if ( index < 0 || static_cast<std::size_t>( index ) >= targetSize ) {
+			Error(
+			    "%s: %s %zu has invalid %s index %d (total %zu)",
+			    context, owner, ownerIndex, target, index, targetSize
+			);
+		}
+	};
+	const auto finiteVector = []( const Vector3& vector ){
+		return std::isfinite( vector.x() ) &&
+		       std::isfinite( vector.y() ) &&
+		       std::isfinite( vector.z() );
+	};
+
+	ValidateMOHAALimits();
+	if ( bspModels.empty() ) {
+		Error( "%s: MOHAA BSP contains no world model", context );
+	}
+
+	constexpr float maxWorldCoordinate = 128.0f * 128.0f;
+	for ( std::size_t i = 0; i < bspModels.size(); ++i )
+	{
+		const bspModel_t& model = bspModels[i];
+		validateRange(
+		    "model", i, "draw surface",
+		    model.firstBSPSurface, model.numBSPSurfaces, bspDrawSurfaces.size()
+		);
+		validateRange(
+		    "model", i, "brush",
+		    model.firstBSPBrush, model.numBSPBrushes, bspBrushes.size()
+		);
+		if ( !finiteVector( model.minmax.mins ) || !finiteVector( model.minmax.maxs ) ) {
+			Error( "%s: model %zu has non-finite bounds", context, i );
+		}
+		for ( int axis = 0; axis < 3; ++axis )
+		{
+			if ( model.minmax.mins[axis] > model.minmax.maxs[axis] ||
+			     model.minmax.mins[axis] < -maxWorldCoordinate ||
+			     model.minmax.maxs[axis] > maxWorldCoordinate ) {
+				Error(
+				    "%s: model %zu has invalid bounds on axis %d (%f to %f)",
+				    context, i, axis, model.minmax.mins[axis], model.minmax.maxs[axis]
+				);
+			}
+		}
+	}
+
+	for ( std::size_t i = 0; i < bspPlanes.size(); ++i )
+	{
+		const bspPlane_t& plane = bspPlanes[i];
+		if ( !finiteVector( plane.normal() ) || !std::isfinite( plane.dist() ) ||
+		     vector3_length_squared( plane.normal() ) == 0.0f ) {
+			Error( "%s: plane %zu is not finite and non-degenerate", context, i );
+		}
+	}
+
+	for ( std::size_t i = 0; i < bspNodes.size(); ++i )
+	{
+		const bspNode_t& node = bspNodes[i];
+		validateIndex( "node", i, "plane", node.planeNum, bspPlanes.size() );
+		for ( int side = 0; side < 2; ++side )
+		{
+			const int child = node.children[side];
+			if ( child >= 0 ) {
+				validateIndex( "node", i, "child node", child, bspNodes.size() );
+			}
+			else
+			{
+				const std::int64_t leaf = -static_cast<std::int64_t>( child ) - 1;
+				if ( leaf < 0 || static_cast<std::size_t>( leaf ) >= bspLeafs.size() ) {
+					Error(
+					    "%s: node %zu has invalid child leaf index %lld (total %zu)",
+					    context, i, static_cast<long long>( leaf ), bspLeafs.size()
+					);
+				}
+			}
+		}
+	}
+
+	int visClusters = 0;
+	if ( !bspVisBytes.empty() ) {
+		int visHeader[2];
+		std::memcpy( visHeader, bspVisBytes.data(), sizeof( visHeader ) );
+		visClusters = visHeader[0];
+		const int bytesPerCluster = visHeader[1];
+		if ( visClusters < 0 || bytesPerCluster < 0 ||
+		     ( visClusters > 0 && bytesPerCluster == 0 ) ||
+		     static_cast<std::size_t>( visClusters ) >
+		         ( bspVisBytes.size() - sizeof( visHeader ) ) /
+		             std::max( 1, bytesPerCluster ) ) {
+			Error(
+			    "%s: invalid visibility dimensions (%d clusters, %d bytes each, %zu bytes total)",
+			    context, visClusters, bytesPerCluster, bspVisBytes.size()
+			);
+		}
+	}
+
+	for ( std::size_t i = 0; i < bspLeafs.size(); ++i )
+	{
+		const bspLeaf_t& leaf = bspLeafs[i];
+		validateRange(
+		    "leaf", i, "leaf surface",
+		    leaf.firstBSPLeafSurface, leaf.numBSPLeafSurfaces, bspLeafSurfaces.size()
+		);
+		validateRange(
+		    "leaf", i, "leaf brush",
+		    leaf.firstBSPLeafBrush, leaf.numBSPLeafBrushes, bspLeafBrushes.size()
+		);
+		if ( leaf.cluster < -1 || ( !bspVisBytes.empty() && leaf.cluster >= visClusters ) ) {
+			Error(
+			    "%s: leaf %zu has invalid visibility cluster %d (total %d)",
+			    context, i, leaf.cluster, visClusters
+			);
+		}
+	}
+
+	for ( std::size_t i = 0; i < bspLeafSurfaces.size(); ++i )
+		validateIndex( "leaf surface", i, "draw surface", bspLeafSurfaces[i], bspDrawSurfaces.size() );
+	for ( std::size_t i = 0; i < bspLeafBrushes.size(); ++i )
+		validateIndex( "leaf brush", i, "brush", bspLeafBrushes[i], bspBrushes.size() );
+
+	for ( std::size_t i = 0; i < bspBrushes.size(); ++i )
+	{
+		const bspBrush_t& brush = bspBrushes[i];
+		validateRange( "brush", i, "brush side", brush.firstSide, brush.numSides, bspBrushSides.size() );
+		validateIndex( "brush", i, "shader", brush.shaderNum, bspShaders.size() );
+	}
+	for ( std::size_t i = 0; i < bspBrushSides.size(); ++i )
+	{
+		const bspBrushSide_t& side = bspBrushSides[i];
+		validateIndex( "brush side", i, "plane", side.planeNum, bspPlanes.size() );
+		validateIndex( "brush side", i, "shader", side.shaderNum, bspShaders.size() );
+		if ( side.surfaceNum < -1 ||
+		     ( side.surfaceNum >= 0 && static_cast<std::size_t>( side.surfaceNum ) >= bspDrawSurfaces.size() ) ) {
+			Error(
+			    "%s: brush side %zu has invalid draw surface index %d (total %zu)",
+			    context, i, side.surfaceNum, bspDrawSurfaces.size()
+			);
+		}
+	}
+
+	constexpr std::size_t lightmapPageBytes = 128 * 128 * 3;
+	if ( bspLightBytes.size() % lightmapPageBytes != 0 ) {
+		Error( "%s: lightmap lump has invalid size %zu", context, bspLightBytes.size() );
+	}
+	const std::size_t lightmapPages = bspLightBytes.size() / lightmapPageBytes;
+
+	for ( std::size_t i = 0; i < bspDrawSurfaces.size(); ++i )
+	{
+		const bspDrawSurface_t& surface = bspDrawSurfaces[i];
+		validateIndex( "draw surface", i, "shader", surface.shaderNum, bspShaders.size() );
+		if ( surface.fogNum < -1 ||
+		     ( surface.fogNum >= 0 && static_cast<std::size_t>( surface.fogNum ) >= bspFogs.size() ) ) {
+			Error(
+			    "%s: draw surface %zu has invalid fog index %d (total %zu)",
+			    context, i, surface.fogNum, bspFogs.size()
+			);
+		}
+		if ( surface.surfaceType < MST_PLANAR || surface.surfaceType > MST_FOLIAGE ) {
+			Error( "%s: draw surface %zu has invalid type %d", context, i, surface.surfaceType );
+		}
+		validateRange(
+		    "draw surface", i, "vertex",
+		    surface.firstVert, surface.numVerts, bspDrawVerts.size()
+		);
+		validateRange(
+		    "draw surface", i, "draw index",
+		    surface.firstIndex, surface.numIndexes, bspDrawIndexes.size()
+		);
+		if ( surface.numIndexes % 3 != 0 ) {
+			Error( "%s: draw surface %zu has a non-triangular index count %d", context, i, surface.numIndexes );
+		}
+		for ( int j = 0; j < surface.numIndexes; ++j )
+		{
+			const int index = bspDrawIndexes[surface.firstIndex + j];
+			if ( index < 0 || index >= surface.numVerts ) {
+				Error(
+				    "%s: draw surface %zu has invalid relative vertex index %d (total %d)",
+				    context, i, index, surface.numVerts
+				);
+			}
+		}
+		if ( surface.surfaceType == MST_PATCH ) {
+			if ( surface.patchWidth < 2 || surface.patchHeight < 2 ||
+			     static_cast<std::size_t>( surface.patchWidth ) >
+			         static_cast<std::size_t>( surface.numVerts ) /
+			             static_cast<std::size_t>( surface.patchHeight ) ||
+			     surface.patchWidth * surface.patchHeight != surface.numVerts ) {
+				Error(
+				    "%s: patch surface %zu has invalid dimensions %dx%d for %d vertices",
+				    context, i, surface.patchWidth, surface.patchHeight, surface.numVerts
+				);
+			}
+		}
+		if ( surface.lightmapNum[0] >= 0 &&
+		     static_cast<std::size_t>( surface.lightmapNum[0] ) >= lightmapPages ) {
+			Error(
+			    "%s: draw surface %zu has invalid lightmap index %d (total %zu)",
+			    context, i, surface.lightmapNum[0], lightmapPages
+			);
+		}
+	}
+
+	for ( std::size_t i = 0; i < bspDrawVerts.size(); ++i )
+	{
+		if ( !finiteVector( bspDrawVerts[i].xyz ) || !finiteVector( bspDrawVerts[i].normal ) ) {
+			Error( "%s: draw vertex %zu has non-finite geometry", context, i );
+		}
+	}
 }
 
 void LoadMOHAABSPFile( const char *filename ){
