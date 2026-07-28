@@ -489,13 +489,6 @@ void ValidateMOHAABSPFile( const char *context ){
 		const bspBrushSide_t& side = bspBrushSides[i];
 		validateIndex( "brush side", i, "plane", side.planeNum, bspPlanes.size() );
 		validateIndex( "brush side", i, "shader", side.shaderNum, bspShaders.size() );
-		if ( side.surfaceNum < -1 ||
-		     ( side.surfaceNum >= 0 && static_cast<std::size_t>( side.surfaceNum ) >= bspDrawSurfaces.size() ) ) {
-			Error(
-			    "%s: brush side %zu has invalid draw surface index %d (total %zu)",
-			    context, i, side.surfaceNum, bspDrawSurfaces.size()
-			);
-		}
 	}
 
 	constexpr std::size_t lightmapPageBytes = 128 * 128 * 3;
