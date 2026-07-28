@@ -60,6 +60,34 @@ jobs:
             DEPENDENCIES_CHECK=verbose \
             -j"$(sysctl -n hw.ncpu)"
 
+      - name: Smoke-test MOHAA BSP and PK3
+        shell: bash
+        run: |
+          smoke_root="$RUNNER_TEMP/mohaa-smoke"
+          map="$smoke_root/main/maps/mohaa_smoke.map"
+          bsp="$smoke_root/main/maps/mohaa_smoke.bsp"
+          terrain_map="$smoke_root/main/maps/mohaa_terrain.map"
+          terrain_bsp="$smoke_root/main/maps/mohaa_terrain.bsp"
+          pk3="$smoke_root/main/mohaa_smoke.pk3"
+          q3map2="install/q3map2.arm64"
+
+          mkdir -p "$smoke_root/main/maps" "$smoke_root/main/scripts"
+          cp regression_tests/q3map2/coarse_snap_normal/maps/coarse_snap_normal.map "$map"
+          cp regression_tests/q3map2/mohaa/terrain.map "$terrain_map"
+
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -v "$map"
+          test "$(dd if="$bsp" bs=1 count=4 2>/dev/null)" = "2015"
+          test "$(od -An -tu4 -j4 -N4 "$bsp" | tr -d ' ')" = "19"
+
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -v "$terrain_map"
+          test "$(dd if="$terrain_bsp" bs=1 count=4 2>/dev/null)" = "2015"
+
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis -fast "$bsp"
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -light -fast -samples 1 "$bsp"
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -pk3 -bsp-only -output "$pk3" "$bsp"
+
+          unzip -Z1 "$pk3" | grep -qx "maps/mohaa_smoke.bsp"
+
       - name: Package and validate app bundle
         shell: bash
         run: |
