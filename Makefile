@@ -1104,6 +1104,7 @@ $(INSTALLDIR)/modules/mapq3.$(DLL): CPPFLAGS_EXTRA := -Ilibs -Iinclude
 $(INSTALLDIR)/modules/mapq3.$(DLL): \
 	plugins/mapq3/parse.o \
 	plugins/mapq3/plugin.o \
+	plugins/mapq3/terrain.o \
 	plugins/mapq3/write.o \
 
 $(INSTALLDIR)/modules/mapxml.$(DLL): LIBS_EXTRA := $(LIBS_XML) $(LIBS_GLIB)

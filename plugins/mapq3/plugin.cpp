@@ -36,6 +36,7 @@
 #include "modulesystem/singletonmodule.h"
 
 #include "parse.h"
+#include "terrain.h"
 #include "write.h"
 
 
@@ -249,8 +250,7 @@ public:
 				return GlobalPatchModule::getTable().createPatch();
 			}
 			if ( string_equal( primitive, "terrainDef" ) ) {
-				globalWarningStream() << "Preserving unsupported terrainDef primitive without rendering it\n";
-				return NewOpaqueMapPrimitive( primitive );
+				return NewMOHAATerrain();
 			}
 			if( !m_formatDetected ){
 				EBrushType detectedFormat;
