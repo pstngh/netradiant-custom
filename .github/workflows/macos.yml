@@ -72,6 +72,7 @@ jobs:
           truncated_bsp="$smoke_root/main/maps/mohaa_truncated.bsp"
           invalid_lump_bsp="$smoke_root/main/maps/mohaa_invalid_lump.bsp"
           invalid_reference_bsp="$smoke_root/main/maps/mohaa_invalid_reference.bsp"
+          invalid_grid_bsp="$smoke_root/main/maps/mohaa_invalid_grid.bsp"
           q3map2="install/q3map2.arm64"
 
           mkdir -p "$smoke_root/main/maps" "$smoke_root/main/scripts"
@@ -87,6 +88,28 @@ jobs:
 
           "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis -fast "$bsp"
           "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -light -fast -samples 1 "$bsp"
+
+          palette_offset="$(od -An -tu4 -j140 -N4 "$bsp" | tr -d ' ')"
+          palette_length="$(od -An -tu4 -j144 -N4 "$bsp" | tr -d ' ')"
+          grid_offsets_offset="$(od -An -tu4 -j148 -N4 "$bsp" | tr -d ' ')"
+          grid_offsets_length="$(od -An -tu4 -j152 -N4 "$bsp" | tr -d ' ')"
+          grid_data_offset="$(od -An -tu4 -j156 -N4 "$bsp" | tr -d ' ')"
+          grid_data_length="$(od -An -tu4 -j160 -N4 "$bsp" | tr -d ' ')"
+          test "$palette_length" -eq 768
+          test "$grid_offsets_length" -eq 2244
+          test "$grid_data_length" -gt 0
+
+          palette_hash="$(dd if="$bsp" bs=1 skip="$palette_offset" count="$palette_length" status=none | shasum -a 256 | cut -d' ' -f1)"
+          grid_offsets_hash="$(dd if="$bsp" bs=1 skip="$grid_offsets_offset" count="$grid_offsets_length" status=none | shasum -a 256 | cut -d' ' -f1)"
+          grid_data_hash="$(dd if="$bsp" bs=1 skip="$grid_data_offset" count="$grid_data_length" status=none | shasum -a 256 | cut -d' ' -f1)"
+
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis -fast "$bsp"
+          test "$(od -An -tu4 -j144 -N4 "$bsp" | tr -d ' ')" -eq "$palette_length"
+          test "$(od -An -tu4 -j152 -N4 "$bsp" | tr -d ' ')" -eq "$grid_offsets_length"
+          test "$(od -An -tu4 -j160 -N4 "$bsp" | tr -d ' ')" -eq "$grid_data_length"
+          test "$(dd if="$bsp" bs=1 skip="$(od -An -tu4 -j140 -N4 "$bsp" | tr -d ' ')" count="$palette_length" status=none | shasum -a 256 | cut -d' ' -f1)" = "$palette_hash"
+          test "$(dd if="$bsp" bs=1 skip="$(od -An -tu4 -j148 -N4 "$bsp" | tr -d ' ')" count="$grid_offsets_length" status=none | shasum -a 256 | cut -d' ' -f1)" = "$grid_offsets_hash"
+          test "$(dd if="$bsp" bs=1 skip="$(od -An -tu4 -j156 -N4 "$bsp" | tr -d ' ')" count="$grid_data_length" status=none | shasum -a 256 | cut -d' ' -f1)" = "$grid_data_hash"
 
           dd if="$bsp" of="$truncated_bsp" bs=1 count=32 status=none
           if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis "$truncated_bsp" >"$RUNNER_TEMP/truncated.log" 2>&1; then
@@ -112,6 +135,15 @@ jobs:
             exit 1
           fi
           grep -q "draw surface 0 has invalid shader index" "$RUNNER_TEMP/invalid-reference.log"
+
+          cp "$bsp" "$invalid_grid_bsp"
+          grid_offsets_offset="$(od -An -tu4 -j148 -N4 "$invalid_grid_bsp" | tr -d ' ')"
+          printf '\377\377' | dd of="$invalid_grid_bsp" bs=1 seek="$((grid_offsets_offset + 66))" conv=notrunc status=none
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis "$invalid_grid_bsp" >"$RUNNER_TEMP/invalid-grid.log" 2>&1; then
+            echo "q3map2 unexpectedly accepted an invalid MOHAA light-grid offset"
+            exit 1
+          fi
+          grep -q "points outside row data" "$RUNNER_TEMP/invalid-grid.log"
 
           printf 'previous known-good archive\n' >"$pk3"
           previous_pk3_hash="$(shasum -a 256 "$pk3" | cut -d' ' -f1)"

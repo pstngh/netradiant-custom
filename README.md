@@ -20,10 +20,15 @@ Main focus is on Quake, Quake3 and Quake Live.
 Though other normally supported games should work too. Releases include configs for the following games: Alien Arena, Darkplaces, Doom 3, Doombringer, Wolfenstein: Enemy Territory, Heretic II, Half-Life, Jedi Knight Jedi Academy, Jedi Knight II: Jedi Outcast, Kingpin, Medal of Honor: Allied Assault, Medal of Honor: Spearhead, Medal of Honor: Breakthrough, Neverball, Nexuiz, Open Arena, OpenMoHAA, Project::OSiRiON, Prey, Quake II, Q3Rally, Quake 4, Quetoo, Smokin' Guns, Soldier of Fortune II - Double Helix, Star Trek Voyager : Elite Force, Tremulous, Turtle Arena, UFO:Alien Invasion, Unreal Arena, Unvanquished, Urban Terror, Warfork, Warsow, Return To Castle Wolfenstein, World of Padman, Xonotic, ZEQ2 Lite.
 
 The bundled Medal of Honor profiles support textual map editing, PK3 assets,
-shader scripts, and OpenMoHAA-derived entity definitions. MOHAA BSP compilation
-is deliberately disabled until the bundled compiler supports the game's
-`2015` BSP format and versions 17 through 21; `q3map2`'s Quake 3 output is not
-compatible.
+shader scripts, OpenMoHAA-derived entity definitions, and native MOHAA
+`2015` version 19 BSP compilation. The compiler writes surface lightmaps and
+MOHAA's paletted, compressed 32-unit entity light grid, and preserves native
+grid data when a lit BSP is processed again. MOHAA terrain patches are
+converted to compatible detail-brush geometry during compilation.
+
+The MOHAA build menus include one-click test and final builds. Their `+ PK3`
+variants package the compiled BSP and same-name map sidecars (`.scr`, `.aas`,
+and `.arena`) directly into a loadable PK3 in the selected game's directory.
 
 ## Features
 

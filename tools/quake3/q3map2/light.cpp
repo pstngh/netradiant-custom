@@ -1723,8 +1723,20 @@ static void SetupGrid( const Vector3& ambientColor ){
 		return;
 	}
 
-	/* ydnar: set grid size */
-	entities[ 0 ].read_keyvalue( gridSize, "gridsize" );
+	/*
+	   MOHAA 2015 version 19 BSPs use a fixed 32-unit grid in the engine.
+	   A worldspawn gridsize key is ignored by the native compressed-grid
+	   loader, so using any other dimensions would misaddress the row data.
+	 */
+	const bool mohaaGrid = strEqual( g_game->arg, "mohaa" );
+	if ( mohaaGrid ) {
+		gridSize = Vector3( 32 );
+	}
+	else
+	{
+		/* ydnar: set grid size */
+		entities[ 0 ].read_keyvalue( gridSize, "gridsize" );
+	}
 
 	/* quantize it */
 	const Vector3 oldGridSize = gridSize;
@@ -1747,6 +1759,13 @@ static void SetupGrid( const Vector3& ambientColor ){
 
 		/* increase grid size a bit */
 		if ( num > MAX_MAP_LIGHTGRID ) {
+			if ( mohaaGrid ) {
+				Error(
+				    "MOHAA's fixed 32-unit light grid requires %lld points "
+				    "(q3map2 maximum %d)",
+				    static_cast<long long>( num ), MAX_MAP_LIGHTGRID
+				);
+			}
 			gridSize[ j++ % 3 ] += 16.0f;
 		}
 		else{
@@ -2149,17 +2168,6 @@ int LightMain( Args& args ){
 	/* note it */
 	Sys_Printf( "--- Light ---\n" );
 	Sys_Printf( "--- ProcessGameSpecific ---\n" );
-
-	/*
-	   MOHAA stores entity lighting in a game-specific compressed grid.  The
-	   generic q3map2 grid is neither binary-compatible with that format nor
-	   written by bspfile_mohaa, so do not calculate data we cannot serialize.
-	   Surface lightmaps continue through the normal lighting pipeline.
-	 */
-	if ( strEqual( g_game->arg, "mohaa" ) ) {
-		noGridLighting = true;
-		Sys_Printf( " MOHAA compressed lightgrid output is not supported; entity grid lighting disabled\n" );
-	}
 
 	/* set standard game flags */
 	wolfLight = g_game->wolfLight;

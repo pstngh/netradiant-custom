@@ -13,8 +13,13 @@
 #include "bspfile_abstract.h"
 #include "bspfile_mohaa.h"
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstring>
+#include <limits>
+#include <numeric>
+#include <unordered_map>
 #include <vector>
 
 namespace
@@ -250,6 +255,532 @@ static_assert( sizeof( MOHAALeaf ) == 64 );
 static_assert( sizeof( MOHAABrushSide ) == 12 );
 static_assert( sizeof( MOHAADrawVert ) == 44 );
 static_assert( sizeof( MOHAADrawSurface ) == 108 );
+
+constexpr int MOHAA_LIGHTGRID_PALETTE_COLORS = 256;
+constexpr int MOHAA_LIGHTGRID_PALETTE_BYTES = MOHAA_LIGHTGRID_PALETTE_COLORS * 3;
+constexpr int MOHAA_LIGHTGRID_SPACING = 32;
+constexpr std::size_t MOHAA_LIGHTGRID_MAX_BYTES = 0x800000;
+
+struct MOHAALightGridLumps
+{
+	std::vector<byte> palette;
+	std::vector<byte> offsets;
+	std::vector<byte> data;
+};
+
+MOHAALightGridLumps mohaaLightGrid;
+
+std::array<int, 3> MOHAALightGridBounds(){
+	if ( bspModels.empty() ) {
+		Error( "MOHAALightGridBounds: MOHAA BSP contains no world model" );
+	}
+
+	std::array<int, 3> bounds{};
+	for ( int axis = 0; axis < 3; ++axis )
+	{
+		const double minimum = std::ceil(
+		    static_cast<double>( bspModels[0].minmax.mins[axis] ) / MOHAA_LIGHTGRID_SPACING
+		);
+		const double maximum = std::floor(
+		    static_cast<double>( bspModels[0].minmax.maxs[axis] ) / MOHAA_LIGHTGRID_SPACING
+		);
+		const double count = maximum - minimum + 1.0;
+		if ( count <= 0.0 || count > static_cast<double>( std::numeric_limits<int>::max() ) ) {
+			Error( "MOHAA light grid has invalid bounds on axis %d", axis );
+		}
+		bounds[axis] = static_cast<int>( count );
+	}
+	return bounds;
+}
+
+std::uint16_t ReadLittleUnsignedShort( const std::vector<byte>& bytes, std::size_t index ){
+	const std::size_t offset = index * 2;
+	return static_cast<std::uint16_t>(
+	    static_cast<std::uint16_t>( bytes[offset] ) |
+	    ( static_cast<std::uint16_t>( bytes[offset + 1] ) << 8 )
+	);
+}
+
+void AppendLittleUnsignedShort( std::vector<byte>& bytes, std::uint16_t value ){
+	bytes.push_back( static_cast<byte>( value & 0xff ) );
+	bytes.push_back( static_cast<byte>( value >> 8 ) );
+}
+
+std::array<byte, 3> MOHAAGridPointColor( const bspGridPoint_t& point ){
+	std::array<byte, 3> color{};
+	for ( int channel = 0; channel < 3; ++channel )
+	{
+		color[channel] = static_cast<byte>( std::min(
+		    255,
+		    static_cast<int>( point.ambient[0][channel] ) +
+		        static_cast<int>( point.directed[0][channel] )
+		) );
+	}
+	return color;
+}
+
+struct MOHAAHistogramCell
+{
+	std::uint64_t count = 0;
+	std::array<std::uint64_t, 3> sum{};
+};
+
+struct MOHAAQuantizedColor
+{
+	std::array<int, 3> color{};
+	std::uint64_t count = 0;
+	int histogramIndex = 0;
+};
+
+struct MOHAAColorBox
+{
+	std::vector<int> colors;
+	std::array<int, 3> minimum{};
+	std::array<int, 3> maximum{};
+	std::uint64_t count = 0;
+};
+
+void UpdateMOHAAColorBox(
+    MOHAAColorBox& box,
+    const std::vector<MOHAAQuantizedColor>& colors ){
+	box.minimum.fill( 255 );
+	box.maximum.fill( 0 );
+	box.count = 0;
+	for ( const int index : box.colors )
+	{
+		const MOHAAQuantizedColor& color = colors[index];
+		box.count += color.count;
+		for ( int channel = 0; channel < 3; ++channel )
+		{
+			box.minimum[channel] = std::min( box.minimum[channel], color.color[channel] );
+			box.maximum[channel] = std::max( box.maximum[channel], color.color[channel] );
+		}
+	}
+}
+
+int MOHAAColorBoxSplitChannel( const MOHAAColorBox& box ){
+	int channel = 0;
+	for ( int candidate = 1; candidate < 3; ++candidate )
+	{
+		if ( box.maximum[candidate] - box.minimum[candidate] >
+		     box.maximum[channel] - box.minimum[channel] ) {
+			channel = candidate;
+		}
+	}
+	return channel;
+}
+
+std::array<byte, 3> MOHAAColorBoxAverage(
+    const MOHAAColorBox& box,
+    const std::vector<MOHAAQuantizedColor>& colors ){
+	std::array<std::uint64_t, 3> sum{};
+	for ( const int index : box.colors )
+	{
+		const MOHAAQuantizedColor& color = colors[index];
+		for ( int channel = 0; channel < 3; ++channel )
+			sum[channel] += static_cast<std::uint64_t>( color.color[channel] ) * color.count;
+	}
+
+	std::array<byte, 3> average{};
+	for ( int channel = 0; channel < 3; ++channel )
+		average[channel] = static_cast<byte>( ( sum[channel] + box.count / 2 ) / box.count );
+	return average;
+}
+
+std::vector<byte> BuildMOHAALightGridPalette(
+    std::array<byte, 1 << 15>& histogramToPalette ){
+	std::array<MOHAAHistogramCell, 1 << 15> histogram{};
+	for ( const bspGridPoint_t& point : bspGridPoints )
+	{
+		const auto color = MOHAAGridPointColor( point );
+		if ( color[0] == 0 && color[1] == 0 && color[2] == 0 ) {
+			continue;
+		}
+
+		const int histogramIndex =
+		    ( static_cast<int>( color[0] ) >> 3 ) |
+		    ( ( static_cast<int>( color[1] ) >> 3 ) << 5 ) |
+		    ( ( static_cast<int>( color[2] ) >> 3 ) << 10 );
+		MOHAAHistogramCell& cell = histogram[histogramIndex];
+		++cell.count;
+		for ( int channel = 0; channel < 3; ++channel )
+			cell.sum[channel] += color[channel];
+	}
+
+	std::vector<MOHAAQuantizedColor> colors;
+	colors.reserve( histogram.size() );
+	for ( std::size_t i = 0; i < histogram.size(); ++i )
+	{
+		const MOHAAHistogramCell& cell = histogram[i];
+		if ( cell.count == 0 ) {
+			continue;
+		}
+
+		MOHAAQuantizedColor& color = colors.emplace_back();
+		color.count = cell.count;
+		color.histogramIndex = static_cast<int>( i );
+		for ( int channel = 0; channel < 3; ++channel )
+			color.color[channel] = static_cast<int>( ( cell.sum[channel] + cell.count / 2 ) / cell.count );
+	}
+
+	std::vector<MOHAAColorBox> boxes;
+	if ( !colors.empty() ) {
+		MOHAAColorBox& initial = boxes.emplace_back();
+		initial.colors.resize( colors.size() );
+		std::iota( initial.colors.begin(), initial.colors.end(), 0 );
+		UpdateMOHAAColorBox( initial, colors );
+	}
+
+	while ( boxes.size() < MOHAA_LIGHTGRID_PALETTE_COLORS - 1 )
+	{
+		std::size_t splitBox = boxes.size();
+		std::uint64_t bestScore = 0;
+		for ( std::size_t i = 0; i < boxes.size(); ++i )
+		{
+			const MOHAAColorBox& box = boxes[i];
+			if ( box.colors.size() < 2 ) {
+				continue;
+			}
+			const int channel = MOHAAColorBoxSplitChannel( box );
+			const std::uint64_t score =
+			    static_cast<std::uint64_t>( box.maximum[channel] - box.minimum[channel] + 1 ) *
+			    box.count;
+			if ( splitBox == boxes.size() || score > bestScore ) {
+				splitBox = i;
+				bestScore = score;
+			}
+		}
+		if ( splitBox == boxes.size() ) {
+			break;
+		}
+
+		MOHAAColorBox box = std::move( boxes[splitBox] );
+		const int channel = MOHAAColorBoxSplitChannel( box );
+		std::stable_sort(
+		    box.colors.begin(), box.colors.end(),
+		    [&colors, channel]( int left, int right ){
+			    if ( colors[left].color[channel] != colors[right].color[channel] ) {
+				    return colors[left].color[channel] < colors[right].color[channel];
+			    }
+			    return colors[left].histogramIndex < colors[right].histogramIndex;
+		    }
+		);
+
+		const std::uint64_t half = ( box.count + 1 ) / 2;
+		std::uint64_t accumulated = 0;
+		std::size_t split = 0;
+		while ( split + 1 < box.colors.size() )
+		{
+			accumulated += colors[box.colors[split]].count;
+			++split;
+			if ( accumulated >= half ) {
+				break;
+			}
+		}
+
+		MOHAAColorBox left;
+		MOHAAColorBox right;
+		left.colors.assign( box.colors.begin(), box.colors.begin() + split );
+		right.colors.assign( box.colors.begin() + split, box.colors.end() );
+		UpdateMOHAAColorBox( left, colors );
+		UpdateMOHAAColorBox( right, colors );
+		boxes[splitBox] = std::move( left );
+		boxes.push_back( std::move( right ) );
+	}
+
+	std::vector<byte> palette( MOHAA_LIGHTGRID_PALETTE_BYTES, 0 );
+	for ( std::size_t i = 0; i < boxes.size(); ++i )
+	{
+		const auto average = MOHAAColorBoxAverage( boxes[i], colors );
+		const byte paletteIndex = static_cast<byte>( i + 1 );
+		for ( int channel = 0; channel < 3; ++channel )
+			palette[static_cast<std::size_t>( paletteIndex ) * 3 + channel] = average[channel];
+		for ( const int colorIndex : boxes[i].colors )
+			histogramToPalette[colors[colorIndex].histogramIndex] = paletteIndex;
+	}
+	return palette;
+}
+
+std::vector<byte> CompressMOHAALightGridColumn( const std::vector<byte>& samples ){
+	std::vector<byte> compressed;
+	compressed.reserve( samples.size() + 1 );
+
+	std::size_t position = 0;
+	while ( position < samples.size() )
+	{
+		std::size_t repeated = 1;
+		while ( position + repeated < samples.size() &&
+		        samples[position + repeated] == samples[position] &&
+		        repeated < 129 ) {
+			++repeated;
+		}
+
+		if ( repeated >= 2 ) {
+			compressed.push_back( static_cast<byte>( repeated - 2 ) );
+			compressed.push_back( samples[position] );
+			position += repeated;
+			continue;
+		}
+
+		const std::size_t literalStart = position++;
+		while ( position < samples.size() && position - literalStart < 128 )
+		{
+			std::size_t nextRepeated = 1;
+			while ( position + nextRepeated < samples.size() &&
+			        samples[position + nextRepeated] == samples[position] &&
+			        nextRepeated < 2 ) {
+				++nextRepeated;
+			}
+			if ( nextRepeated >= 2 ) {
+				break;
+			}
+			++position;
+		}
+
+		const std::size_t literalLength = position - literalStart;
+		compressed.push_back( static_cast<byte>( 0 - static_cast<int>( literalLength ) ) );
+		compressed.insert(
+		    compressed.end(),
+		    samples.begin() + literalStart,
+		    samples.begin() + position
+		);
+	}
+	return compressed;
+}
+
+std::uint64_t HashMOHAALightGridColumn( const std::vector<byte>& column ){
+	std::uint64_t hash = UINT64_C( 14695981039346656037 );
+	for ( const byte value : column )
+	{
+		hash ^= value;
+		hash *= UINT64_C( 1099511628211 );
+	}
+	return hash;
+}
+
+struct MOHAAStoredGridColumn
+{
+	std::uint32_t offset;
+	std::uint32_t length;
+};
+
+void BuildMOHAALightGrid(){
+	const std::array<int, 3> bounds = MOHAALightGridBounds();
+	const std::size_t width = static_cast<std::size_t>( bounds[0] );
+	const std::size_t height = static_cast<std::size_t>( bounds[1] );
+	const std::size_t depth = static_cast<std::size_t>( bounds[2] );
+	if ( width > std::numeric_limits<std::size_t>::max() / height ||
+	     width * height > std::numeric_limits<std::size_t>::max() / depth ||
+	     width * height * depth != bspGridPoints.size() ) {
+		Error(
+		    "MOHAA light grid size mismatch: runtime expects %d x %d x %d, compiler produced %zu points",
+		    bounds[0], bounds[1], bounds[2], bspGridPoints.size()
+		);
+	}
+
+	std::array<byte, 1 << 15> histogramToPalette{};
+	mohaaLightGrid.palette = BuildMOHAALightGridPalette( histogramToPalette );
+	mohaaLightGrid.data.clear();
+
+	std::vector<std::uint32_t> columnOffsets( width * height );
+	std::unordered_map<std::uint64_t, std::vector<MOHAAStoredGridColumn>> storedColumns;
+	std::vector<byte> samples( depth );
+	for ( std::size_t x = 0; x < width; ++x )
+	{
+		std::uint32_t sliceMinimum = std::numeric_limits<std::uint32_t>::max();
+		std::uint32_t sliceMaximum = 0;
+		for ( std::size_t y = 0; y < height; ++y )
+		{
+			for ( std::size_t z = 0; z < depth; ++z )
+			{
+				const bspGridPoint_t& point =
+				    bspGridPoints[x + y * width + z * width * height];
+				const auto color = MOHAAGridPointColor( point );
+				if ( color[0] == 0 && color[1] == 0 && color[2] == 0 ) {
+					samples[z] = 0;
+				}
+				else
+				{
+					const int histogramIndex =
+					    ( static_cast<int>( color[0] ) >> 3 ) |
+					    ( ( static_cast<int>( color[1] ) >> 3 ) << 5 ) |
+					    ( ( static_cast<int>( color[2] ) >> 3 ) << 10 );
+					samples[z] = histogramToPalette[histogramIndex];
+				}
+			}
+
+			const std::vector<byte> compressed = CompressMOHAALightGridColumn( samples );
+			const std::uint64_t hash = HashMOHAALightGridColumn( compressed );
+			std::uint32_t offset = std::numeric_limits<std::uint32_t>::max();
+			auto& candidates = storedColumns[hash];
+			for ( auto candidate = candidates.rbegin(); candidate != candidates.rend(); ++candidate )
+			{
+				const std::uint32_t candidateMinimum = std::min( sliceMinimum, candidate->offset );
+				const std::uint32_t candidateMaximum = std::max( sliceMaximum, candidate->offset );
+				if ( candidateMaximum - candidateMinimum > std::numeric_limits<std::uint16_t>::max() ||
+				     candidate->length != compressed.size() ) {
+					continue;
+				}
+				if ( std::equal(
+				         compressed.begin(), compressed.end(),
+				         mohaaLightGrid.data.begin() + candidate->offset
+				     ) ) {
+					offset = candidate->offset;
+					break;
+				}
+			}
+
+			if ( offset == std::numeric_limits<std::uint32_t>::max() ) {
+				if ( mohaaLightGrid.data.size() > std::numeric_limits<std::uint32_t>::max() ) {
+					Error( "MOHAA light grid data exceeds addressable offset range" );
+				}
+				offset = static_cast<std::uint32_t>( mohaaLightGrid.data.size() );
+				const std::uint32_t candidateMinimum = std::min( sliceMinimum, offset );
+				const std::uint32_t candidateMaximum = std::max( sliceMaximum, offset );
+				if ( candidateMaximum - candidateMinimum > std::numeric_limits<std::uint16_t>::max() ) {
+					Error(
+					    "MOHAA light grid x slice %zu exceeds the 16-bit relative offset range",
+					    x
+					);
+				}
+				mohaaLightGrid.data.insert(
+				    mohaaLightGrid.data.end(), compressed.begin(), compressed.end()
+				);
+				candidates.push_back( {
+					offset,
+					static_cast<std::uint32_t>( compressed.size() )
+				} );
+			}
+
+			sliceMinimum = std::min( sliceMinimum, offset );
+			sliceMaximum = std::max( sliceMaximum, offset );
+			columnOffsets[x * height + y] = offset;
+		}
+	}
+
+	if ( mohaaLightGrid.data.empty() ) {
+		Error( "MOHAA light grid compressor produced no row data" );
+	}
+	if ( mohaaLightGrid.data.size() > MOHAA_LIGHTGRID_MAX_BYTES ) {
+		Error(
+		    "MOHAA light grid data is %zu bytes (maximum %zu)",
+		    mohaaLightGrid.data.size(), MOHAA_LIGHTGRID_MAX_BYTES
+		);
+	}
+
+	mohaaLightGrid.offsets.clear();
+	mohaaLightGrid.offsets.reserve( ( width + width * height ) * 2 );
+	for ( std::size_t x = 0; x < width; ++x )
+	{
+		const auto begin = columnOffsets.begin() + x * height;
+		const std::uint32_t minimum = *std::min_element( begin, begin + height );
+		const std::uint32_t high = minimum >> 8;
+		if ( high > std::numeric_limits<std::uint16_t>::max() ) {
+			Error( "MOHAA light grid data offset exceeds the 16-bit page range" );
+		}
+		AppendLittleUnsignedShort( mohaaLightGrid.offsets, static_cast<std::uint16_t>( high ) );
+	}
+	for ( std::size_t x = 0; x < width; ++x )
+	{
+		const std::uint32_t base =
+		    static_cast<std::uint32_t>( ReadLittleUnsignedShort( mohaaLightGrid.offsets, x ) ) << 8;
+		for ( std::size_t y = 0; y < height; ++y )
+		{
+			const std::uint32_t offset = columnOffsets[x * height + y];
+			if ( offset < base || offset - base > std::numeric_limits<std::uint16_t>::max() ) {
+				Error( "MOHAA light grid column offset cannot be represented" );
+			}
+			AppendLittleUnsignedShort(
+			    mohaaLightGrid.offsets,
+			    static_cast<std::uint16_t>( offset - base )
+			);
+		}
+	}
+
+	Sys_Printf(
+	    "MOHAA light grid: %d x %d x %d, %zu palette bytes, %zu offset bytes, %zu data bytes\n",
+	    bounds[0], bounds[1], bounds[2],
+	    mohaaLightGrid.palette.size(),
+	    mohaaLightGrid.offsets.size(),
+	    mohaaLightGrid.data.size()
+	);
+}
+
+void ValidateMOHAALightGrid( const char* context ){
+	const bool hasPalette = !mohaaLightGrid.palette.empty();
+	const bool hasOffsets = !mohaaLightGrid.offsets.empty();
+	const bool hasData = !mohaaLightGrid.data.empty();
+	if ( !hasPalette && !hasOffsets && !hasData ) {
+		return;
+	}
+	if ( !hasPalette || !hasOffsets || !hasData ) {
+		Error( "%s: MOHAA light grid has incomplete palette, offset, or row data", context );
+	}
+	if ( mohaaLightGrid.palette.size() != MOHAA_LIGHTGRID_PALETTE_BYTES ) {
+		Error(
+		    "%s: MOHAA light grid palette has invalid size %zu (expected %d)",
+		    context, mohaaLightGrid.palette.size(), MOHAA_LIGHTGRID_PALETTE_BYTES
+		);
+	}
+	if ( mohaaLightGrid.data.size() > MOHAA_LIGHTGRID_MAX_BYTES ) {
+		Error(
+		    "%s: MOHAA light grid data has invalid size %zu (maximum %zu)",
+		    context, mohaaLightGrid.data.size(), MOHAA_LIGHTGRID_MAX_BYTES
+		);
+	}
+
+	const std::array<int, 3> bounds = MOHAALightGridBounds();
+	const std::size_t width = static_cast<std::size_t>( bounds[0] );
+	const std::size_t height = static_cast<std::size_t>( bounds[1] );
+	const std::size_t depth = static_cast<std::size_t>( bounds[2] );
+	const std::size_t expectedOffsets = ( width + width * height ) * 2;
+	if ( mohaaLightGrid.offsets.size() != expectedOffsets ) {
+		Error(
+		    "%s: MOHAA light grid offsets have invalid size %zu (expected %zu)",
+		    context, mohaaLightGrid.offsets.size(), expectedOffsets
+		);
+	}
+
+	for ( std::size_t x = 0; x < width; ++x )
+	{
+		const std::size_t high = static_cast<std::size_t>(
+		    ReadLittleUnsignedShort( mohaaLightGrid.offsets, x )
+		) << 8;
+		for ( std::size_t y = 0; y < height; ++y )
+		{
+			std::size_t offset = high + ReadLittleUnsignedShort(
+			    mohaaLightGrid.offsets,
+			    width + x * height + y
+			);
+			std::size_t decoded = 0;
+			while ( decoded < depth )
+			{
+				if ( offset >= mohaaLightGrid.data.size() ) {
+					Error(
+					    "%s: MOHAA light grid column %zu,%zu points outside row data",
+					    context, x, y
+					);
+				}
+				const int markerByte = mohaaLightGrid.data[offset];
+				const int marker = markerByte < 128 ? markerByte : markerByte - 256;
+				const std::size_t runLength =
+				    marker >= 0
+				        ? static_cast<std::size_t>( marker ) + 2
+				        : static_cast<std::size_t>( -marker );
+				const std::size_t encodedLength = marker >= 0 ? 2 : runLength + 1;
+				if ( offset > mohaaLightGrid.data.size() ||
+				     encodedLength > mohaaLightGrid.data.size() - offset ) {
+					Error(
+					    "%s: MOHAA light grid column %zu,%zu has truncated row data",
+					    context, x, y
+					);
+				}
+				offset += encodedLength;
+				decoded += runLength;
+			}
+		}
+	}
+}
 
 void ValidateMOHAACount( const char* name, std::size_t count, std::size_t limit ){
 	if ( count > limit ) {
@@ -559,6 +1090,11 @@ void ValidateMOHAABSPFile( const char *context ){
 			Error( "%s: draw vertex %zu has non-finite geometry", context, i );
 		}
 	}
+
+	if ( !bspGridPoints.empty() ) {
+		BuildMOHAALightGrid();
+	}
+	ValidateMOHAALightGrid( context );
 }
 
 void LoadMOHAABSPFile( const char *filename ){
@@ -601,6 +1137,9 @@ void LoadMOHAABSPFile( const char *filename ){
 	CopyMOHAALump( fileData, header, LUMP_VISIBILITY, bspVisBytes );
 	CopyMOHAALump( fileData, header, LUMP_LIGHTMAPS, bspLightBytes );
 	CopyMOHAALump( fileData, header, LUMP_ENTITIES, bspEntData );
+	CopyMOHAALump( fileData, header, LUMP_LIGHTGRIDPALETTE, mohaaLightGrid.palette );
+	CopyMOHAALump( fileData, header, LUMP_LIGHTGRIDOFFSETS, mohaaLightGrid.offsets );
+	CopyMOHAALump( fileData, header, LUMP_LIGHTGRIDDATA, mohaaLightGrid.data );
 
 	for ( const bspShader_t& shader : bspShaders )
 	{
@@ -628,6 +1167,7 @@ void WriteMOHAABSPFile( const char *filename ){
 
 	FILE *file = SafeOpenWrite( filename );
 	SafeWrite( file, &header, sizeof( header ) );
+	const std::vector<byte> emptyLump;
 
 	AddLump( file, header.lumps[LUMP_SHADERS], std::vector<MOHAAShader>( bspShaders.begin(), bspShaders.end() ) );
 	AddLump( file, header.lumps[LUMP_PLANES], bspPlanes );
@@ -645,9 +1185,18 @@ void WriteMOHAABSPFile( const char *filename ){
 	AddLump( file, header.lumps[LUMP_MODELS], bspModels );
 	AddLump( file, header.lumps[LUMP_ENTITIES], bspEntData );
 	AddLump( file, header.lumps[LUMP_VISIBILITY], bspVisBytes );
-	AddLump( file, header.lumps[LUMP_LIGHTGRIDPALETTE], std::vector<byte>() );
-	AddLump( file, header.lumps[LUMP_LIGHTGRIDOFFSETS], std::vector<byte>() );
-	AddLump( file, header.lumps[LUMP_LIGHTGRIDDATA], std::vector<byte>() );
+	AddLump(
+	    file, header.lumps[LUMP_LIGHTGRIDPALETTE],
+	    noGridLighting ? emptyLump : mohaaLightGrid.palette
+	);
+	AddLump(
+	    file, header.lumps[LUMP_LIGHTGRIDOFFSETS],
+	    noGridLighting ? emptyLump : mohaaLightGrid.offsets
+	);
+	AddLump(
+	    file, header.lumps[LUMP_LIGHTGRIDDATA],
+	    noGridLighting ? emptyLump : mohaaLightGrid.data
+	);
 	AddLump( file, header.lumps[LUMP_SPHERELIGHTS], std::vector<byte>() );
 	AddLump( file, header.lumps[LUMP_SPHERELIGHTVIS], std::vector<byte>() );
 	AddLump( file, header.lumps[LUMP_LIGHTDEFS], std::vector<byte>() );

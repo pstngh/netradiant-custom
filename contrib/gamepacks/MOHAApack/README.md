@@ -19,6 +19,8 @@ launchers.
   lossless metadata round-tripping
 - Native `2015` version 19 BSP, VIS, and light compilation with the bundled
   `q3map2`
+- Native 32-unit entity lighting using MOHAA's 256-color palette, column
+  run-length compression, and offset-table format
 - Fast-test and final build-menu presets, with optional direct PK3 deployment
 - PK3 archives
 - TGA, JPEG, and PNG textures
@@ -56,13 +58,11 @@ TIKI/SKD model previews and FTX texture previews are also not implemented yet.
 Those formats remain usable as entity key values, but Radiant displays the
 entity box instead of the game model.
 
-The first compiler version does not emit native MOHAA terrain-LOD,
-static-model, spherical-light, or compressed light-grid lumps. Terrain still
-renders and collides through ordinary BSP geometry, and surface lightmaps are
-written normally. MOHAA builds therefore disable light-grid generation;
-dynamic entities without their own lighting are fullbright. The generated
-BSPs target OpenMoHAA first; compatibility with every original EA executable
-is not yet guaranteed.
+The compiler does not yet emit native MOHAA terrain-LOD, static-model,
+spherical-light, or light-definition lumps. Terrain still renders and collides
+through ordinary BSP geometry. Surface lightmaps and the native compressed
+entity light grid are written normally. The generated BSPs target OpenMoHAA
+first; compatibility with every original EA executable is not yet guaranteed.
 
 Select the directory that contains the chosen OpenMoHAA launcher when Radiant
 asks for the engine path. The default macOS location is
