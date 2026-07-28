@@ -86,6 +86,7 @@ jobs:
           "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -v "$terrain_map"
           test "$(dd if="$terrain_bsp" bs=1 count=4 2>/dev/null)" = "2015"
 
+          cp "${bsp%.bsp}.prt" "$RUNNER_TEMP/mohaa_smoke.prt"
           "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis -fast "$bsp"
           "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -light -fast -samples 1 "$bsp"
 
@@ -103,6 +104,7 @@ jobs:
           grid_offsets_hash="$(dd if="$bsp" bs=1 skip="$grid_offsets_offset" count="$grid_offsets_length" status=none | shasum -a 256 | cut -d' ' -f1)"
           grid_data_hash="$(dd if="$bsp" bs=1 skip="$grid_data_offset" count="$grid_data_length" status=none | shasum -a 256 | cut -d' ' -f1)"
 
+          cp "$RUNNER_TEMP/mohaa_smoke.prt" "${bsp%.bsp}.prt"
           "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis -fast "$bsp"
           test "$(od -An -tu4 -j144 -N4 "$bsp" | tr -d ' ')" -eq "$palette_length"
           test "$(od -An -tu4 -j152 -N4 "$bsp" | tr -d ' ')" -eq "$grid_offsets_length"
