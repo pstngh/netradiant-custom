@@ -2150,6 +2150,17 @@ int LightMain( Args& args ){
 	Sys_Printf( "--- Light ---\n" );
 	Sys_Printf( "--- ProcessGameSpecific ---\n" );
 
+	/*
+	   MOHAA stores entity lighting in a game-specific compressed grid.  The
+	   generic q3map2 grid is neither binary-compatible with that format nor
+	   written by bspfile_mohaa, so do not calculate data we cannot serialize.
+	   Surface lightmaps continue through the normal lighting pipeline.
+	 */
+	if ( strEqual( g_game->arg, "mohaa" ) ) {
+		noGridLighting = true;
+		Sys_Printf( " MOHAA compressed lightgrid output is not supported; entity grid lighting disabled\n" );
+	}
+
 	/* set standard game flags */
 	wolfLight = g_game->wolfLight;
 	if ( wolfLight ) {

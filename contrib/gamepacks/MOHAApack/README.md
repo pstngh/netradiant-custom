@@ -54,8 +54,10 @@ entity box instead of the game model.
 The first compiler version does not emit native MOHAA terrain-LOD,
 static-model, spherical-light, or compressed light-grid lumps. Terrain still
 renders and collides through ordinary BSP geometry, and surface lightmaps are
-written normally. The generated BSPs target OpenMoHAA first; compatibility
-with every original EA executable is not yet guaranteed.
+written normally. MOHAA builds therefore disable light-grid generation;
+dynamic entities without their own lighting are fullbright. The generated
+BSPs target OpenMoHAA first; compatibility with every original EA executable
+is not yet guaranteed.
 
 Select the directory that contains the chosen OpenMoHAA launcher when Radiant
 asks for the engine path. The default macOS location is
