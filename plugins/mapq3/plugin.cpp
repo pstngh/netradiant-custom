@@ -36,6 +36,7 @@
 #include "modulesystem/singletonmodule.h"
 
 #include "parse.h"
+#include "terrain.h"
 #include "write.h"
 
 
@@ -247,6 +248,9 @@ public:
 		if ( primitive != 0 ) {
 			if ( string_equal( primitive, "patchDef2" ) ) {
 				return GlobalPatchModule::getTable().createPatch();
+			}
+			if ( string_equal( primitive, "terrainDef" ) ) {
+				return NewMOHAATerrain();
 			}
 			if( !m_formatDetected ){
 				EBrushType detectedFormat;

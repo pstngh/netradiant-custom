@@ -1,0 +1,194 @@
+name: macOS
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: macos-latest
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          brew install \
+            qt@5 \
+            glib \
+            libxml2 \
+            libpng \
+            jpeg-turbo \
+            assimp@5 \
+            pkgconf \
+            dylibbundler
+
+      - name: Build
+        shell: bash
+        run: |
+          qt_prefix="$(brew --prefix qt@5)"
+          assimp_prefix="$(brew --prefix assimp@5)"
+          glib_prefix="$(brew --prefix glib)"
+          xml_prefix="$(brew --prefix libxml2)"
+          png_prefix="$(brew --prefix libpng)"
+          jpeg_prefix="$(brew --prefix jpeg-turbo)"
+
+          export PATH="$qt_prefix/bin:$PATH"
+          export PKG_CONFIG_PATH="$qt_prefix/lib/pkgconfig:$assimp_prefix/lib/pkgconfig:$glib_prefix/lib/pkgconfig:$xml_prefix/lib/pkgconfig:$png_prefix/lib/pkgconfig:$jpeg_prefix/lib/pkgconfig"
+
+          make \
+            CC=clang \
+            CXX=clang++ \
+            CPPFLAGS_JPEG="-I$jpeg_prefix/include" \
+            LIBS_JPEG="-L$jpeg_prefix/lib -ljpeg" \
+            DOWNLOAD_GAMEPACKS=no \
+            DEPENDENCIES_CHECK=verbose \
+            -j"$(sysctl -n hw.ncpu)"
+
+      - name: Smoke-test MOHAA BSP and PK3
+        shell: bash
+        run: |
+          smoke_root="$RUNNER_TEMP/mohaa-smoke"
+          map="$smoke_root/main/maps/mohaa_smoke.map"
+          bsp="$smoke_root/main/maps/mohaa_smoke.bsp"
+          terrain_map="$smoke_root/main/maps/mohaa_terrain.map"
+          terrain_bsp="$smoke_root/main/maps/mohaa_terrain.bsp"
+          pk3="$smoke_root/main/mohaa_smoke.pk3"
+          truncated_bsp="$smoke_root/main/maps/mohaa_truncated.bsp"
+          invalid_lump_bsp="$smoke_root/main/maps/mohaa_invalid_lump.bsp"
+          invalid_reference_bsp="$smoke_root/main/maps/mohaa_invalid_reference.bsp"
+          invalid_grid_bsp="$smoke_root/main/maps/mohaa_invalid_grid.bsp"
+          q3map2="install/q3map2.arm64"
+
+          mkdir -p "$smoke_root/main/maps" "$smoke_root/main/scripts"
+          cp regression_tests/q3map2/coarse_snap_normal/maps/coarse_snap_normal.map "$map"
+          cp regression_tests/q3map2/mohaa/terrain.map "$terrain_map"
+
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -v "$map"
+          test "$(dd if="$bsp" bs=1 count=4 2>/dev/null)" = "2015"
+          test "$(od -An -tu4 -j4 -N4 "$bsp" | tr -d ' ')" = "19"
+
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -v "$terrain_map"
+          test "$(dd if="$terrain_bsp" bs=1 count=4 2>/dev/null)" = "2015"
+
+          cp "${bsp%.bsp}.prt" "$RUNNER_TEMP/mohaa_smoke.prt"
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis -fast "$bsp"
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -light -fast -samples 1 "$bsp"
+
+          palette_offset="$(od -An -tu4 -j140 -N4 "$bsp" | tr -d ' ')"
+          palette_length="$(od -An -tu4 -j144 -N4 "$bsp" | tr -d ' ')"
+          grid_offsets_offset="$(od -An -tu4 -j148 -N4 "$bsp" | tr -d ' ')"
+          grid_offsets_length="$(od -An -tu4 -j152 -N4 "$bsp" | tr -d ' ')"
+          grid_data_offset="$(od -An -tu4 -j156 -N4 "$bsp" | tr -d ' ')"
+          grid_data_length="$(od -An -tu4 -j160 -N4 "$bsp" | tr -d ' ')"
+          test "$palette_length" -eq 768
+          test "$grid_offsets_length" -eq 2244
+          test "$grid_data_length" -gt 0
+
+          palette_hash="$(dd if="$bsp" bs=1 skip="$palette_offset" count="$palette_length" status=none | shasum -a 256 | cut -d' ' -f1)"
+          grid_offsets_hash="$(dd if="$bsp" bs=1 skip="$grid_offsets_offset" count="$grid_offsets_length" status=none | shasum -a 256 | cut -d' ' -f1)"
+          grid_data_hash="$(dd if="$bsp" bs=1 skip="$grid_data_offset" count="$grid_data_length" status=none | shasum -a 256 | cut -d' ' -f1)"
+
+          cp "$RUNNER_TEMP/mohaa_smoke.prt" "${bsp%.bsp}.prt"
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis -fast "$bsp"
+          test "$(od -An -tu4 -j144 -N4 "$bsp" | tr -d ' ')" -eq "$palette_length"
+          test "$(od -An -tu4 -j152 -N4 "$bsp" | tr -d ' ')" -eq "$grid_offsets_length"
+          test "$(od -An -tu4 -j160 -N4 "$bsp" | tr -d ' ')" -eq "$grid_data_length"
+          test "$(dd if="$bsp" bs=1 skip="$(od -An -tu4 -j140 -N4 "$bsp" | tr -d ' ')" count="$palette_length" status=none | shasum -a 256 | cut -d' ' -f1)" = "$palette_hash"
+          test "$(dd if="$bsp" bs=1 skip="$(od -An -tu4 -j148 -N4 "$bsp" | tr -d ' ')" count="$grid_offsets_length" status=none | shasum -a 256 | cut -d' ' -f1)" = "$grid_offsets_hash"
+          test "$(dd if="$bsp" bs=1 skip="$(od -An -tu4 -j156 -N4 "$bsp" | tr -d ' ')" count="$grid_data_length" status=none | shasum -a 256 | cut -d' ' -f1)" = "$grid_data_hash"
+
+          dd if="$bsp" of="$truncated_bsp" bs=1 count=32 status=none
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis "$truncated_bsp" >"$RUNNER_TEMP/truncated.log" 2>&1; then
+            echo "q3map2 unexpectedly accepted a truncated MOHAA BSP"
+            exit 1
+          fi
+          grep -q "too small to contain a MOHAA BSP header" "$RUNNER_TEMP/truncated.log"
+
+          cp "$bsp" "$invalid_lump_bsp"
+          printf '\377\377\377\177' | dd of="$invalid_lump_bsp" bs=1 seek=12 conv=notrunc status=none
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis "$invalid_lump_bsp" >"$RUNNER_TEMP/invalid-lump.log" 2>&1; then
+            echo "q3map2 unexpectedly accepted an out-of-bounds MOHAA BSP lump"
+            exit 1
+          fi
+          grep -q "extends past end of file" "$RUNNER_TEMP/invalid-lump.log"
+
+          cp "$bsp" "$invalid_reference_bsp"
+          surface_offset="$(od -An -tu4 -j36 -N4 "$invalid_reference_bsp" | tr -d ' ')"
+          test "$surface_offset" -gt 0
+          printf '\377\377\377\177' | dd of="$invalid_reference_bsp" bs=1 seek="$surface_offset" conv=notrunc status=none
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis "$invalid_reference_bsp" >"$RUNNER_TEMP/invalid-reference.log" 2>&1; then
+            echo "q3map2 unexpectedly accepted an invalid MOHAA BSP cross-reference"
+            exit 1
+          fi
+          grep -q "draw surface 0 has invalid shader index" "$RUNNER_TEMP/invalid-reference.log"
+
+          cp "$bsp" "$invalid_grid_bsp"
+          grid_offsets_offset="$(od -An -tu4 -j148 -N4 "$invalid_grid_bsp" | tr -d ' ')"
+          printf '\377\377' | dd of="$invalid_grid_bsp" bs=1 seek="$((grid_offsets_offset + 66))" conv=notrunc status=none
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis "$invalid_grid_bsp" >"$RUNNER_TEMP/invalid-grid.log" 2>&1; then
+            echo "q3map2 unexpectedly accepted an invalid MOHAA light-grid offset"
+            exit 1
+          fi
+          grep -q "points outside row data" "$RUNNER_TEMP/invalid-grid.log"
+
+          printf 'previous known-good archive\n' >"$pk3"
+          previous_pk3_hash="$(shasum -a 256 "$pk3" | cut -d' ' -f1)"
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -pk3 -bsp-only -output "$pk3" "$smoke_root/main/maps/missing.bsp"; then
+            echo "q3map2 unexpectedly packaged a missing BSP"
+            exit 1
+          fi
+          test "$(shasum -a 256 "$pk3" | cut -d' ' -f1)" = "$previous_pk3_hash"
+
+          printf 'level script\n' >"${bsp%.bsp}.scr"
+          printf 'navigation data\n' >"${bsp%.bsp}.aas"
+          printf 'arena metadata\n' >"${bsp%.bsp}.arena"
+          "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -pk3 -bsp-only -output "$pk3" "$bsp"
+
+          unzip -t "$pk3"
+          unzip -Z1 "$pk3" | grep -qx "maps/mohaa_smoke.bsp"
+          unzip -Z1 "$pk3" | grep -qx "maps/mohaa_smoke.scr"
+          unzip -Z1 "$pk3" | grep -qx "maps/mohaa_smoke.aas"
+          unzip -Z1 "$pk3" | grep -qx "scripts/mohaa_smoke.arena"
+          unzip -p "$pk3" maps/mohaa_smoke.bsp >"$RUNNER_TEMP/packed.bsp"
+          cmp "$bsp" "$RUNNER_TEMP/packed.bsp"
+          test ! -e "$pk3.tmp"
+          test ! -e "$pk3.bak"
+
+      - name: Package and validate app bundle
+        shell: bash
+        run: |
+          export QT_PREFIX="$(brew --prefix qt@5)"
+          bash setup/apple/package.sh
+
+          app="setup/apple/target/NetRadiant-Custom.app"
+          test -x "$app/Contents/MacOS/radiant"
+          test -f "$app/Contents/Resources/gamepacks/games/mohaa.game"
+          test -f "$app/Contents/Resources/gamepacks/games/mohaas.game"
+          test -f "$app/Contents/Resources/gamepacks/games/mohaab.game"
+          entities="$app/Contents/Resources/gamepacks/mohaa.game/main/entities.def"
+          test -f "$entities"
+          test "$(grep -c '/\*QUAKED' "$entities")" -eq 96
+
+      - name: Upload macOS application
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetRadiant-Custom-macOS-${{ runner.arch }}
+          path: setup/apple/target/NetRadiant-Custom-macos-*.zip
+          if-no-files-found: error
+          retention-days: 14

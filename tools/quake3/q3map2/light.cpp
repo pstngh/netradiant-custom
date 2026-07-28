@@ -1459,7 +1459,8 @@ struct contribution_t
 static void TraceGrid( int num ){
 	int i, j, x, y, z, mod, numCon, numStyles;
 	Vector3 cheapColor, thisdir;
-	contribution_t contributions[ MAX_CONTRIBUTIONS ];
+	/* Keep this large scratch buffer off macOS worker-thread stacks. */
+	static thread_local std::vector<contribution_t> contributions( MAX_CONTRIBUTIONS );
 	trace_t trace;
 
 	/* get grid points */
@@ -1723,8 +1724,20 @@ static void SetupGrid( const Vector3& ambientColor ){
 		return;
 	}
 
-	/* ydnar: set grid size */
-	entities[ 0 ].read_keyvalue( gridSize, "gridsize" );
+	/*
+	   MOHAA 2015 version 19 BSPs use a fixed 32-unit grid in the engine.
+	   A worldspawn gridsize key is ignored by the native compressed-grid
+	   loader, so using any other dimensions would misaddress the row data.
+	 */
+	const bool mohaaGrid = strEqual( g_game->arg, "mohaa" );
+	if ( mohaaGrid ) {
+		gridSize = Vector3( 32 );
+	}
+	else
+	{
+		/* ydnar: set grid size */
+		entities[ 0 ].read_keyvalue( gridSize, "gridsize" );
+	}
 
 	/* quantize it */
 	const Vector3 oldGridSize = gridSize;
@@ -1747,6 +1760,13 @@ static void SetupGrid( const Vector3& ambientColor ){
 
 		/* increase grid size a bit */
 		if ( num > MAX_MAP_LIGHTGRID ) {
+			if ( mohaaGrid ) {
+				Error(
+				    "MOHAA's fixed 32-unit light grid requires %lld points "
+				    "(q3map2 maximum %d)",
+				    static_cast<long long>( num ), MAX_MAP_LIGHTGRID
+				);
+			}
 			gridSize[ j++ % 3 ] += 16.0f;
 		}
 		else{

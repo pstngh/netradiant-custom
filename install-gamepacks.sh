@@ -22,12 +22,16 @@ case "$DOWNLOAD_GAMEPACKS" in
 esac
 
 set -e
-for GAME in games/*Pack; do
-	if [ "$GAME" = "games/*Pack" ]; then
-		$ECHO "Game packs not found, please run"
-		$ECHO "  ./download-gamepacks.sh"
-		$ECHO "and then try again!"
-	else
+found_gamepack=no
+for GAME in contrib/gamepacks/* games/*Pack; do
+	if [ -d "$GAME" ]; then
+		found_gamepack=yes
 		$SH install-gamepack.sh "$GAME" "$dest"
 	fi
 done
+
+if [ "$found_gamepack" = no ]; then
+	$ECHO "Game packs not found, please run"
+	$ECHO "  ./download-gamepacks.sh"
+	$ECHO "and then try again!"
+fi

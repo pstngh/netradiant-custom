@@ -31,6 +31,7 @@
 /* dependencies */
 #include "q3map2.h"
 #include "bspfile_ibsp.h"
+#include "bspfile_mohaa.h"
 #include <ctime>
 
 
@@ -199,6 +200,9 @@ void LoadBSPFile( const char *filename ){
 	/* load it, then byte swap the in-memory version */
 	g_game->load( filename );
 	SwapBSPFile();
+	if ( strEqual( g_game->arg, "mohaa" ) ) {
+		ValidateMOHAABSPFile( filename );
+	}
 }
 
 /*
@@ -212,10 +216,18 @@ void LoadBSPFilePartially( const char *filename ){
 		Error( "LoadBSPFile: unsupported BSP file format" );
 	}
 
-	/* load it, then byte swap the in-memory version */
-	//g_game->load( filename );
-	LoadIBSPorRBSPFilePartially( filename );
+	/* MOHAA has a different header and lump order, so use its native loader. */
+	if ( strEqual( g_game->arg, "mohaa" ) ) {
+		g_game->load( filename );
+	}
+	else
+	{
+		LoadIBSPorRBSPFilePartially( filename );
+	}
 	SwapBSPFile();
+	if ( strEqual( g_game->arg, "mohaa" ) ) {
+		ValidateMOHAABSPFile( filename );
+	}
 }
 
 /*
@@ -232,6 +244,9 @@ void WriteBSPFile( const char *filename ){
 	/* dummy check */
 	if ( g_game == nullptr || g_game->write == nullptr ) {
 		Error( "WriteBSPFile: unsupported BSP file format" );
+	}
+	if ( strEqual( g_game->arg, "mohaa" ) ) {
+		ValidateMOHAABSPFile( filename );
 	}
 
 	/* make fake temp name so existing bsp file isn't damaged in case write process fails */

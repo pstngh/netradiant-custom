@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<project version="2.0">
+  <var name="MOHAAQ3Map2">"[RadiantPath]q3map2.[ExecutableType]" -game mohaa -fs_basepath "[EnginePath]" -fs_game "[GameName]"</var>
+
+  <build name="MOHAA: Fast test">
+    <command>[MOHAAQ3Map2] -v "[MapFile]"</command>
+    <command>[MOHAAQ3Map2] -vis -fast -v "[BspFile]"</command>
+    <command>[MOHAAQ3Map2] -light -fast -samples 1 -v "[BspFile]"</command>
+  </build>
+
+  <build name="MOHAA: Fast test + PK3">
+    <command>[MOHAAQ3Map2] -v "[MapFile]"</command>
+    <command>[MOHAAQ3Map2] -vis -fast -v "[BspFile]"</command>
+    <command>[MOHAAQ3Map2] -light -fast -samples 1 -v "[BspFile]"</command>
+    <command>[MOHAAQ3Map2] -pk3 -bsp-only -output "[EnginePath][GameName]/[MapName].pk3" "[BspFile]"</command>
+  </build>
+
+  <build name="MOHAA: Final + PK3">
+    <command>[MOHAAQ3Map2] -v "[MapFile]"</command>
+    <command>[MOHAAQ3Map2] -vis -v "[BspFile]"</command>
+    <command>[MOHAAQ3Map2] -light -samples 4 -bounce 2 -dirty -filter -v "[BspFile]"</command>
+    <command>[MOHAAQ3Map2] -pk3 -bsp-only -output "[EnginePath][GameName]/[MapName].pk3" "[BspFile]"</command>
+  </build>
+</project>

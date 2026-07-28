@@ -283,6 +283,127 @@ static bool packTexture( const char* texname, const char* packname, const int co
 	return false;
 }
 
+static bool packBSPOnly(
+    const std::vector<CopiedString>& bspList,
+    const char* output,
+    const int compLevel ){
+	struct Companion
+	{
+		const char* extension;
+		const char* archiveDirectory;
+	};
+	constexpr Companion companions[] = {
+		{ ".scr", "maps/" },
+		{ ".aas", "maps/" },
+		{ ".arena", "scripts/" },
+	};
+
+	StringOutputStream stream( 256 );
+	const CopiedString temporary( stream( output, ".tmp" ) );
+
+	/* Validate every input before touching an existing deployable archive. */
+	std::vector<CopiedString> mapNames;
+	for ( const CopiedString& bsp : bspList )
+	{
+		if ( !FileExists( bsp.c_str() ) ) {
+			Sys_FPrintf( SYS_ERR, "BSP does not exist: %s\n", bsp.c_str() );
+			return false;
+		}
+		if ( path_equal( bsp.c_str(), output ) || path_equal( bsp.c_str(), temporary.c_str() ) ) {
+			Sys_FPrintf( SYS_ERR, "PK3 output path conflicts with BSP input: %s\n", bsp.c_str() );
+			return false;
+		}
+
+		const CopiedString mapName( PathFilename( bsp.c_str() ) );
+		for ( const CopiedString& existing : mapNames )
+		{
+			if ( striEqual( existing.c_str(), mapName.c_str() ) ) {
+				Sys_FPrintf(
+				    SYS_ERR,
+				    "Multiple BSP inputs would create the same archive path: maps/%s.bsp\n",
+				    mapName.c_str()
+				);
+				return false;
+			}
+		}
+		mapNames.push_back( mapName );
+	}
+
+	if ( FileExists( temporary.c_str() ) && remove( temporary.c_str() ) != 0 ) {
+		Sys_FPrintf( SYS_ERR, "Unable to remove stale temporary PK3 \"%s\"\n", temporary.c_str() );
+		return false;
+	}
+
+	for ( std::size_t i = 0; i < bspList.size(); ++i )
+	{
+		const CopiedString& bsp = bspList[i];
+		const CopiedString& mapName = mapNames[i];
+		const CopiedString bspArchiveName( stream( "maps/", mapName, ".bsp" ) );
+		if ( !vfsPackFile_Absolute_Path( bsp.c_str(), bspArchiveName.c_str(), temporary.c_str(), compLevel ) ) {
+			Sys_FPrintf( SYS_ERR, "Unable to add %s to %s\n", bsp.c_str(), temporary.c_str() );
+			remove( temporary.c_str() );
+			return false;
+		}
+		Sys_Printf( "++%s\n", bspArchiveName.c_str() );
+
+		for ( const Companion& companion : companions )
+		{
+			const CopiedString source( stream( PathExtensionless( bsp.c_str() ), companion.extension ) );
+			if ( !FileExists( source.c_str() ) ) {
+				continue;
+			}
+
+			const CopiedString archiveName(
+			    stream( companion.archiveDirectory, mapName, companion.extension )
+			);
+			if ( !vfsPackFile_Absolute_Path( source.c_str(), archiveName.c_str(), temporary.c_str(), compLevel ) ) {
+				Sys_FPrintf( SYS_ERR, "Unable to add %s to %s\n", source.c_str(), temporary.c_str() );
+				remove( temporary.c_str() );
+				return false;
+			}
+			Sys_Printf( "++%s\n", archiveName.c_str() );
+		}
+	}
+
+	/*
+	   POSIX rename replaces the destination atomically.  Windows rename does
+	   not, so fall back to a recoverable backup swap there.
+	 */
+	if ( rename( temporary.c_str(), output ) != 0 ) {
+		if ( !FileExists( output ) ) {
+			Sys_FPrintf( SYS_ERR, "Unable to move completed PK3 to \"%s\"\n", output );
+			remove( temporary.c_str() );
+			return false;
+		}
+
+		const CopiedString backup( stream( output, ".bak" ) );
+		if ( FileExists( backup.c_str() ) && remove( backup.c_str() ) != 0 ) {
+			Sys_FPrintf( SYS_ERR, "Unable to remove stale PK3 backup \"%s\"\n", backup.c_str() );
+			remove( temporary.c_str() );
+			return false;
+		}
+		if ( rename( output, backup.c_str() ) != 0 ) {
+			Sys_FPrintf( SYS_ERR, "Unable to back up existing PK3 \"%s\"\n", output );
+			remove( temporary.c_str() );
+			return false;
+		}
+		if ( rename( temporary.c_str(), output ) != 0 ) {
+			Sys_FPrintf( SYS_ERR, "Unable to replace existing PK3 \"%s\"; restoring backup\n", output );
+			if ( rename( backup.c_str(), output ) != 0 ) {
+				Sys_FPrintf( SYS_ERR, "Unable to restore PK3 backup \"%s\"\n", backup.c_str() );
+			}
+			remove( temporary.c_str() );
+			return false;
+		}
+		if ( remove( backup.c_str() ) != 0 ) {
+			Sys_FPrintf( SYS_WRN, "WARNING: unable to remove PK3 backup \"%s\"\n", backup.c_str() );
+		}
+	}
+
+	Sys_Printf( "\nSaved deployable map PK3 to %s\n", output );
+	return true;
+}
+
 
 
 
@@ -293,7 +414,8 @@ static bool packTexture( const char* texname, const char* packname, const int co
 
 int pk3BSPMain( Args& args ){
 	int compLevel = 9; // MZ_BEST_COMPRESSION; MZ_UBER_COMPRESSION : not zlib compatible, and may be very slow
-	bool dbg = false, png = false, packFAIL = false;
+	bool dbg = false, png = false, packFAIL = false, bspOnly = false;
+	CopiedString output;
 	StringOutputStream stream( 256 );
 
 	/* process arguments */
@@ -304,6 +426,12 @@ int pk3BSPMain( Args& args ){
 		}
 		if ( args.takeArg( "-png" ) ) {
 			png = true;
+		}
+		if ( args.takeArg( "-bsp-only" ) ) {
+			bspOnly = true;
+		}
+		if ( args.takeArg( "-output", "-o" ) ) {
+			output = args.takeNext();
 		}
 		if ( args.takeArg( "-complevel" ) ) {
 			compLevel = std::clamp( atoi( args.takeNext() ), -1, 10 );
@@ -320,6 +448,13 @@ int pk3BSPMain( Args& args ){
 		bspList.emplace_back( stream( PathExtensionless( ExpandArg( args.takeFront() ) ), ".bsp" ) );
 	}
 	bspList.emplace_back( stream( PathExtensionless( ExpandArg( fileName ) ), ".bsp" ) );
+
+	if ( bspOnly ) {
+		if ( output.empty() ) {
+			output = stream( g_enginePath, g_game->gamePath, '/', nameOFpack, ".pk3" );
+		}
+		return packBSPOnly( bspList, output.c_str(), compLevel ) ? 0 : 1;
+	}
 
 	/* parse bsps */
 	StrList pk3Shaders;
@@ -991,4 +1126,3 @@ int repackBSPMain( Args& args ){
 	/* return to sender */
 	return 0;
 }
-

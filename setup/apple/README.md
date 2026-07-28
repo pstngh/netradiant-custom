@@ -1,50 +1,38 @@
-NetRadiant for Apple OS X
-========================
+# NetRadiant Custom for macOS
 
-This directory provides packaging steps for NetRadiant for OS X. This document describes compiling the application on OSX as well as generating distributable bundles using the framework provided in this directory.
+The Apple build is a native Qt 5 application. It does not require XQuartz or
+MacPorts.
 
-Dependencies & Compilation
---------------------------
+Install the build and packaging dependencies with Homebrew:
 
-Directions for OS X Yosemite 10.10 - your mileage may vary:
-
-- Install [MacPorts](http://macports.org).
-- Install [XQuartz](http://xquartz.macosforge.org/)
-
-- Install dependencies with MacPorts:
-
-```
-sudo port install dylibbundler pkgconfig gtkglext
+```sh
+brew install qt@5 glib libxml2 libpng jpeg-turbo assimp@5 pkgconf dylibbundler
 ```
 
-- Get the NetRadiant code and compile:
+Set `PATH` and `PKG_CONFIG_PATH` for the keg-only dependencies, then build:
 
-```
-git clone https://gitlab.com/xonotic/netradiant.git
-cd netradiant/
-make
-```
+```sh
+QT_PREFIX="$(brew --prefix qt@5)"
+ASSIMP_PREFIX="$(brew --prefix assimp@5)"
+JPEG_PREFIX="$(brew --prefix jpeg-turbo)"
 
-- Run the build:
+export PATH="$QT_PREFIX/bin:$PATH"
+export PKG_CONFIG_PATH="$QT_PREFIX/lib/pkgconfig:$ASSIMP_PREFIX/lib/pkgconfig:$(brew --prefix glib)/lib/pkgconfig:$(brew --prefix libxml2)/lib/pkgconfig:$(brew --prefix libpng)/lib/pkgconfig:$JPEG_PREFIX/lib/pkgconfig"
 
-(from the netradiant/ directory)
-```
-./install/radiant
-```
+make CC=clang CXX=clang++ \
+  CPPFLAGS_JPEG="-I$JPEG_PREFIX/include" \
+  LIBS_JPEG="-L$JPEG_PREFIX/lib -ljpeg" \
+  DOWNLOAD_GAMEPACKS=no
 
-XQuartz note: on my configuration XQuartz doesn't automatically start for some reason. I have to open another terminal, and run the following command: `/Applications/Utilities/XQuartz.app/Contents/MacOS/X11.bin`, then start radiant. 
-    
-Building NetRadiant.app
------------------------
-
-The `Makefile` in the 'setup/apple/' directory will produce a distributable .app bundle for NetRadiant using `dylibbundler`:
-
-```
-make
-make image
+bash setup/apple/package.sh
 ```
 
-Getting help
-------------
+The packaging script creates:
 
-IRC: Quakenet #xonotic, or post something on the issue tracker..
+- `setup/apple/target/NetRadiant-Custom.app`
+- `setup/apple/target/NetRadiant-Custom-macos-<arch>.zip`
+
+It deploys Qt with `macdeployqt`, collects other Homebrew dylibs with
+`dylibbundler`, checks for build-machine dependency paths, and applies an ad-hoc
+signature. Release builds are not notarized; users may need to use Finder's
+**Open** command the first time they launch a downloaded build.

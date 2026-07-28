@@ -205,10 +205,12 @@ void GLSLProgram_validate( GLuint program ){
 	gl().glGetProgramiv( program, GL_VALIDATE_STATUS, &validated );
 
 	if ( !validated ) {
+		// Validation is state-dependent and may legitimately fail while the
+		// first QOpenGLWidget is still being initialised. Shader compilation
+		// and program linking above are the actual creation-time checks.
+		globalWarningStream() << "GLSL program validation failed for the current OpenGL state:\n";
 		printProgramLog( program );
 	}
-
-	ASSERT_MESSAGE( validated, "program validation failed" );
 }
 
 bool g_bumpGLSLPass_enabled = false;

@@ -207,6 +207,11 @@ void ParsePatch( bool onlyLights, entity_t& mapEnt, int mapPrimitiveNum ){
 	const String64 shader( "textures/", token );
 
 	Parse1DMatrix( 5, info );
+	/* MOHAA may append "subdivisions <x> <y>" to the parameter line. */
+	while ( TokenAvailable() )
+	{
+		GetToken( false );
+	}
 	mesh_t m( info[0], info[1] );
 	const int numVerts = m.numVerts();
 

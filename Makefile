@@ -98,12 +98,14 @@ LIBS_ASSIMP        := -lassimp_ -L$(INSTALLDIR)
 endif
 CPPFLAGS_GL        ?=
 LIBS_GL            ?= -lGL # -lopengl32 on Win32
+OPENGL_HEADER      ?= GL/gl.h
 CPPFLAGS_DL        ?=
 LIBS_DL            ?= -ldl # nothing on Win32
 CPPFLAGS_ZLIB      ?=
 LIBS_ZLIB          ?= -lz
 CPPFLAGS_JPEG      ?=
 LIBS_JPEG          ?= -ljpeg
+DLL_SHARED_FLAG    ?= -shared
 DEPEND_ON_MAKEFILE ?= yes
 # yes = download; all = even download undistributable gamepacks; no = disable; allinone = dl all-in-one compact fixed archive
 DOWNLOAD_GAMEPACKS ?= allinone
@@ -245,12 +247,13 @@ else
 
 ifeq ($(OS),Darwin)
 	CPPFLAGS_COMMON += -DPOSIX -DXWINDOWS
-	CFLAGS_COMMON += -fPIC
-	CXXFLAGS_COMMON += -fno-exceptions -fno-rtti
-	MACLIBDIR ?= /opt/local/lib
-	CPPFLAGS_COMMON += -I$(MACLIBDIR)/../include -I/usr/X11R6/include
-	LDFLAGS_COMMON += -L$(MACLIBDIR) -L/usr/X11R6/lib
-	LDFLAGS_DLL += -dynamiclib -ldl
+	MACOSX_DEPLOYMENT_TARGET ?= 12.0
+	CFLAGS_COMMON += -fPIC -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)
+	LDFLAGS_COMMON := $(filter-out -s,$(LDFLAGS_COMMON))
+	LDFLAGS_COMMON += -mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET) -Wl,-headerpad_max_install_names
+	LDFLAGS_DLL = -dynamiclib -undefined dynamic_lookup
+	DLL_SHARED_FLAG =
+	LIBS_COMMON = -lpthread
 	EXE ?= $(shell uname -m)
 	MAKE_EXE_SYMLINK = true
 	A = a
@@ -259,9 +262,17 @@ ifeq ($(OS),Darwin)
 	# workaround for weird prints
 	ECHO_NOLF = /bin/echo -n
 
-	# workaround: http://developer.apple.com/qa/qa2007/qa1567.html
-	LIBS_GL += -lX11 -dylib_file /System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/libGL.dylib:/System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/libGL.dylib
-	# workaround: we have no "ldd" for OS X, so...
+	# Homebrew Qt is packaged as frameworks. --libs-only-L/--libs-only-l
+	# drops the required -F/-framework arguments on macOS.
+	LIBS_QTCORE := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKGCONFIG) Qt5Core --libs $(STDERR_TO_DEVNULL))
+	LIBS_QTGUI := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKGCONFIG) Qt5Gui --libs $(STDERR_TO_DEVNULL))
+	LIBS_QTWIDGETS := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKGCONFIG) Qt5Widgets --libs $(STDERR_TO_DEVNULL))
+	LIBS_QTSVG := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) $(PKGCONFIG) Qt5Svg --libs $(STDERR_TO_DEVNULL))
+
+	LIBS_GL = -framework OpenGL
+	OPENGL_HEADER = OpenGL/gl.h
+	LIBS_DL =
+	# We have no ldd on macOS; package validation uses otool instead.
 	LDD =
 	OTOOL = otool
 else
@@ -398,7 +409,7 @@ dependencies-check:
 	checkheader libglib2.0-dev glib.h g_path_is_absolute "$(CPPFLAGS_GLIB)" "$(LIBS_GLIB)"; \
 	checkheader libxml2-dev libxml/xpath.h xmlXPathInit "$(CPPFLAGS_XML)" "$(LIBS_XML)"; \
 	checkheader libpng12-dev png.h png_create_read_struct "$(CPPFLAGS_PNG)" "$(LIBS_PNG)"; \
-	checkheader "mesa-common-dev (or another OpenGL library)" GL/gl.h glClear "$(CPPFLAGS_GL)" "$(LIBS_GL)"; \
+	checkheader "mesa-common-dev (or another OpenGL library)" $(OPENGL_HEADER) glClear "$(CPPFLAGS_GL)" "$(LIBS_GL)"; \
 	checkheader Qt5Core QCoreApplication QCoreApplication::exec "$(CPPFLAGS_QTCORE)" "$(LIBS_QTCORE)"; \
 	checkheader Qt5Gui QGuiApplication QGuiApplication::exec "$(CPPFLAGS_QTGUI)" "$(LIBS_QTGUI)"; \
 	checkheader Qt5Widgets QApplication QApplication::exec "$(CPPFLAGS_QTWIDGETS)" "$(LIBS_QTWIDGETS)"; \
@@ -515,7 +526,7 @@ $(INSTALLDIR)/%: $(INSTALLDIR)/%.$(EXE)
 
 %.$(DLL):
 	file=$@; $(MKDIR) $${file%/*}
-	$(CXX) $^ $(LDFLAGS) $(LDFLAGS_COMMON) $(LDFLAGS_EXTRA) $(LDFLAGS_DLL) $(LIBS_EXTRA) $(LIBS_COMMON) $(LIBS) -shared -o $@
+	$(CXX) $^ $(LDFLAGS) $(LDFLAGS_COMMON) $(LDFLAGS_EXTRA) $(LDFLAGS_DLL) $(LIBS_EXTRA) $(LIBS_COMMON) $(LIBS) $(DLL_SHARED_FLAG) -o $@
 	[ -z "$(LDD)" ] || [ -z "`$(LDD) -r $@ $(STDERR_TO_STDOUT) $(STDOUT_TO_DEVNULL) $(TEE_STDERR)`" ] || { $(RM) $@; exit 1; }
 
 %.rc: %.ico
@@ -563,6 +574,7 @@ $(INSTALLDIR)/q3map2.$(EXE): \
 	tools/quake3/q3map2/brush.o \
 	tools/quake3/q3map2/bspfile_abstract.o \
 	tools/quake3/q3map2/bspfile_ibsp.o \
+	tools/quake3/q3map2/bspfile_mohaa.o \
 	tools/quake3/q3map2/bspfile_rbsp.o \
 	tools/quake3/q3map2/bsp.o \
 	tools/quake3/q3map2/convert_ase.o \
@@ -1089,10 +1101,11 @@ $(INSTALLDIR)/modules/imagepng.$(DLL): CPPFLAGS_EXTRA := $(CPPFLAGS_PNG) -Ilibs 
 $(INSTALLDIR)/modules/imagepng.$(DLL): \
 	plugins/imagepng/plugin.o \
 
-$(INSTALLDIR)/modules/mapq3.$(DLL): CPPFLAGS_EXTRA := -Ilibs -Iinclude
+$(INSTALLDIR)/modules/mapq3.$(DLL): CPPFLAGS_EXTRA := -Ilibs -Iinclude $(CPPFLAGS_QTGUI)
 $(INSTALLDIR)/modules/mapq3.$(DLL): \
 	plugins/mapq3/parse.o \
 	plugins/mapq3/plugin.o \
+	plugins/mapq3/terrain.o \
 	plugins/mapq3/write.o \
 
 $(INSTALLDIR)/modules/mapxml.$(DLL): LIBS_EXTRA := $(LIBS_XML) $(LIBS_GLIB)

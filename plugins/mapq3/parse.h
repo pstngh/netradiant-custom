@@ -33,6 +33,7 @@ public:
 };
 
 void Map_Read( scene::Node& root, Tokeniser& tokeniser, EntityCreator& entityTable, const PrimitiveParser& parser );
+scene::Node& NewOpaqueMapPrimitive( const char* type );
 
 namespace scene
 {

@@ -1100,6 +1100,18 @@ static void ParseRawBrush( bool onlyLights ){
 			//% td.flags = atoi( token );
 			GetToken( false );
 			//% td.value = atoi( token );
+
+			/* MOHAA appends compiler metadata such as "+surfaceparm detail". */
+			while ( TokenAvailable() )
+			{
+				GetToken( false );
+				if ( strEqual( token, "+surfaceparm" ) && TokenAvailable() ) {
+					GetToken( false );
+					if ( !ApplySurfaceParm( token, &side.contentFlags, &side.surfaceFlags, &side.compileFlags ) ) {
+						Sys_Warning( "Unknown MOHAA face surfaceparm: \"%s\"\n", token );
+					}
+				}
+			}
 		}
 	}
 
@@ -1201,6 +1213,207 @@ static void ParseBrush( bool onlyLights, bool noCollapseGroups, entity_t& mapEnt
 
 	/* finish the brush */
 	FinishBrush( noCollapseGroups, mapEnt );
+}
+
+struct MOHAATerrain
+{
+	int width;
+	int height;
+	Vector3 origin;
+	std::vector<Vector3> vertices;
+	String64 shader;
+};
+
+static void ParseMOHAATerrainTokenGroup(){
+	MatchToken( "(" );
+	for (;; )
+	{
+		GetToken( false );
+		if ( strEqual( token, ")" ) ) {
+			return;
+		}
+	}
+}
+
+static void InitialiseMOHAATerrainSide(
+    side_t& side,
+    const Vector3& a,
+    const Vector3& b,
+    const Vector3& c,
+    const Vector3& interior,
+    shaderInfo_t& shader,
+    bool visible ){
+	Plane3 plane = plane3_for_points( a, b, c );
+	if ( plane3_distance_to_point( plane, interior ) > 0 ) {
+		plane = plane3_flipped( plane );
+	}
+
+	const std::array<Vector3, 3> points{ a, b, c };
+	side.plane = plane;
+	side.planenum = FindFloatPlane( Plane3f( plane ), points );
+	side.shaderInfo = &shader;
+	side.surfaceFlags = shader.surfaceFlags;
+	side.contentFlags = shader.contentFlags;
+	side.compileFlags = shader.compileFlags | C_DETAIL;
+	side.value = shader.value;
+	if ( !visible ) {
+		side.compileFlags |= C_NODRAW;
+	}
+
+	float shift[2]{};
+	float scale[2]{ 0.5f, 0.5f };
+	QuakeTextureVecs( mapplanes[side.planenum], shift, 0, scale, side.vecs );
+}
+
+static void MakeMOHAATerrainBrush(
+    const Vector3& a,
+    const Vector3& b,
+    const Vector3& c,
+    float bottom,
+    shaderInfo_t& topShader,
+    shaderInfo_t& sideShader,
+    bool noCollapseGroups,
+    entity_t& mapEnt,
+    int mapPrimitiveNum ){
+	const Vector3 bottomA( a.x(), a.y(), bottom );
+	const Vector3 bottomB( b.x(), b.y(), bottom );
+	const Vector3 bottomC( c.x(), c.y(), bottom );
+	const Vector3 interior = ( a + b + c + bottomA + bottomB + bottomC ) / 6.0f;
+
+	buildBrush = brush_t();
+	buildBrush.sides.resize( 5 );
+	buildBrush.entityNum = mapEnt.mapEntityNum;
+	buildBrush.brushNum = mapPrimitiveNum;
+
+	InitialiseMOHAATerrainSide( buildBrush.sides[0], a, b, c, interior, topShader, true );
+	InitialiseMOHAATerrainSide( buildBrush.sides[1], bottomA, bottomC, bottomB, interior, sideShader, false );
+	InitialiseMOHAATerrainSide( buildBrush.sides[2], a, bottomA, bottomB, interior, sideShader, false );
+	InitialiseMOHAATerrainSide( buildBrush.sides[3], b, bottomB, bottomC, interior, sideShader, false );
+	InitialiseMOHAATerrainSide( buildBrush.sides[4], c, bottomC, bottomA, interior, sideShader, false );
+
+	if ( !RemoveDuplicateBrushPlanes( buildBrush ) ) {
+		return;
+	}
+	SetBrushContents( buildBrush );
+	FinishBrush( noCollapseGroups, mapEnt );
+}
+
+static void ParseMOHAATerrain(
+    bool onlyLights,
+    bool noCollapseGroups,
+    entity_t& mapEnt,
+    int mapPrimitiveNum ){
+	MOHAATerrain terrain{};
+
+	MatchToken( "{" );
+	GetToken( true );
+	terrain.width = atoi( token );
+	GetToken( false );
+	terrain.height = atoi( token );
+	GetToken( false ); /* primitive flags */
+	if ( terrain.width < 2 || terrain.height < 2 ||
+	     terrain.width > 4096 || terrain.height > 4096 ||
+	     terrain.width > 1024 * 1024 / terrain.height ) {
+		Error( "ParseMOHAATerrain: bad size %dx%d", terrain.width, terrain.height );
+	}
+
+	GetToken( true );
+	terrain.origin.x() = atof( token );
+	GetToken( false );
+	terrain.origin.y() = atof( token );
+	GetToken( false );
+	terrain.origin.z() = atof( token );
+	if ( !std::isfinite( terrain.origin.x() ) ||
+	     !std::isfinite( terrain.origin.y() ) ||
+	     !std::isfinite( terrain.origin.z() ) ) {
+		Error( "ParseMOHAATerrain: non-finite origin" );
+	}
+
+	MatchToken( "{" );
+	for (;; )
+	{
+		GetToken( true );
+		if ( strEqual( token, "}" ) ) {
+			break;
+		}
+
+		std::vector<String64> line;
+		line.emplace_back( token );
+		while ( TokenAvailable() )
+		{
+			GetToken( false );
+			line.emplace_back( token );
+		}
+		if ( terrain.shader.empty() ) {
+			for ( std::size_t i = 0; i + 1 < line.size(); ++i )
+			{
+				if ( strEqual( line[i], "(" ) ) {
+					terrain.shader( "textures/", line[i + 1] );
+					break;
+				}
+			}
+		}
+	}
+	if ( terrain.shader.empty() ) {
+		terrain.shader = "textures/common/caulk";
+	}
+
+	MatchToken( "{" );
+	terrain.vertices.reserve( terrain.width * terrain.height );
+	float minimumHeight = 0;
+	for ( int y = 0; y < terrain.height; ++y )
+	{
+		for ( int x = 0; x < terrain.width; ++x )
+		{
+			GetToken( true );
+			const float height = atof( token );
+			if ( !std::isfinite( height ) ) {
+				Error( "ParseMOHAATerrain: non-finite height at %d,%d", x, y );
+			}
+			value_minimize( minimumHeight, height );
+			terrain.vertices.emplace_back(
+			    terrain.origin.x() + x * 64.0f,
+			    terrain.origin.y() + y * 64.0f,
+			    terrain.origin.z() + height
+			);
+			ParseMOHAATerrainTokenGroup();
+			ParseMOHAATerrainTokenGroup();
+		}
+	}
+	MatchToken( "}" );
+	MatchToken( "}" );
+	MatchToken( "}" );
+
+	if ( onlyLights ) {
+		return;
+	}
+
+	shaderInfo_t& topShader = ShaderInfoForShader( terrain.shader );
+	shaderInfo_t& sideShader = ShaderInfoForShader( "textures/common/caulk" );
+	const float bottom = terrain.origin.z() + minimumHeight - 64.0f;
+	const auto vertex = [&]( int x, int y ) -> const Vector3& {
+		return terrain.vertices[y * terrain.width + x];
+	};
+
+	for ( int y = 0; y + 1 < terrain.height; ++y )
+	{
+		for ( int x = 0; x + 1 < terrain.width; ++x )
+		{
+			const Vector3& a = vertex( x, y );
+			const Vector3& b = vertex( x + 1, y );
+			const Vector3& c = vertex( x, y + 1 );
+			const Vector3& d = vertex( x + 1, y + 1 );
+			if ( ( x + y ) & 1 ) {
+				MakeMOHAATerrainBrush( a, c, d, bottom, topShader, sideShader, noCollapseGroups, mapEnt, mapPrimitiveNum );
+				MakeMOHAATerrainBrush( d, b, a, bottom, topShader, sideShader, noCollapseGroups, mapEnt, mapPrimitiveNum );
+			}
+			else
+			{
+				MakeMOHAATerrainBrush( a, c, b, bottom, topShader, sideShader, noCollapseGroups, mapEnt, mapPrimitiveNum );
+				MakeMOHAATerrainBrush( b, c, d, bottom, topShader, sideShader, noCollapseGroups, mapEnt, mapPrimitiveNum );
+			}
+		}
+	}
 }
 
 
@@ -1567,8 +1780,7 @@ static bool ParseMapEntity( bool onlyLights, bool noCollapseGroups, int mapEntit
 				ParsePatch( onlyLights, mapEnt, mapPrimitiveNum );
 			}
 			else if ( strEqual( token, "terrainDef" ) ) {
-				//% ParseTerrain();
-				Sys_Warning( "Terrain entity parsing not supported in this build.\n" ); /* ydnar */
+				ParseMOHAATerrain( onlyLights, noCollapseGroups, mapEnt, mapPrimitiveNum );
 			}
 			else if ( strEqual( token, "brushDef" ) ) {
 				if ( g_brushType == EBrushType::Undefined ) {

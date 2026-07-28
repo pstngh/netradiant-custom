@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include <vector>
+
 /// \file
 /// \brief The brush primitive.
 ///
@@ -318,22 +320,26 @@ public:
 	public:
 		CopiedString m_shader;
 		ContentsFlagsValue m_flags;
+		std::vector<CopiedString> m_mapExtensions;
 
 		SavedState( const FaceShader& faceShader )
 		:	m_shader( faceShader.getShader() ),
-			m_flags( faceShader.m_flags ){
+			m_flags( faceShader.m_flags ),
+			m_mapExtensions( faceShader.m_mapExtensions ){
 		}
 
 		void exportState( FaceShader& faceShader ) const {
 			faceShader.setShader( m_shader.c_str() );
 			//faceShader.setFlags( m_flags ); //detail, structural flags aren't undoable with this
 			faceShader.m_flags = m_flags;
+			faceShader.m_mapExtensions = m_mapExtensions;
 		}
 	};
 
 	CopiedString m_shader;
 	Shader* m_state;
 	ContentsFlagsValue m_flags;
+	std::vector<CopiedString> m_mapExtensions;
 	FaceShaderObserverPair m_observers;
 	bool m_instanced;
 	bool m_realised;
@@ -980,6 +986,7 @@ public:
 		m_observer( observer ),
 		m_undoable_observer( 0 ),
 		m_map( 0 ){
+		m_shader.m_mapExtensions = other.m_shader.m_mapExtensions;
 		m_shader.attach( *this );
 		m_plane.copy( other.m_plane );
 //		m_texdef.setBasis( m_plane.plane3().normal() ); //don't reset basis on face clone

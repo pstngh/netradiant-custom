@@ -28,6 +28,7 @@
 
 #include "games.h"
 #include "bspfile_ibsp.h"
+#include "bspfile_mohaa.h"
 #include "bspfile_rbsp.h"
 #include "qstringops.h"
 #include "inout.h"
@@ -200,6 +201,141 @@ struct game_quake3 : game_default
 		{ "ob",             0,                          0,                          0,                          0,                          C_OB,                       0 },
 		} );
 		brushBevelsSurfaceFlagsMask |= Q_SURF_NOOB;
+	}
+};
+
+struct game_mohaa : game_default
+{
+	static const int M_CONT_SOLID       = 0x00000001;
+	static const int M_CONT_LADDER      = 0x00000002;
+	static const int M_CONT_LAVA        = 0x00000008;
+	static const int M_CONT_SLIME       = 0x00000010;
+	static const int M_CONT_WATER       = 0x00000020;
+	static const int M_CONT_FOG         = 0x00000040;
+	static const int M_CONT_FENCE       = 0x00002000;
+	static const int M_CONT_AREAPORTAL  = 0x00008000;
+	static const int M_CONT_PLAYERCLIP  = 0x00010000;
+	static const int M_CONT_MONSTERCLIP = 0x00020000;
+	static const int M_CONT_WEAPONCLIP  = 0x00040000;
+	static const int M_CONT_VEHICLECLIP = 0x00080000;
+	static const int M_CONT_DONOTENTER  = 0x00200000;
+	static const int M_CONT_BOTCLIP     = 0x00400000;
+	static const int M_CONT_ORIGIN      = 0x01000000;
+	static const int M_CONT_DETAIL      = 0x08000000;
+	static const int M_CONT_STRUCTURAL  = 0x10000000;
+	static const int M_CONT_TRANSLUCENT = 0x20000000;
+	static const int M_CONT_TRIGGER     = 0x40000000;
+	static const int M_CONT_NODROP      = 0x80000000;
+
+	static const int M_SURF_NODAMAGE    = 0x00000001;
+	static const int M_SURF_SLICK       = 0x00000002;
+	static const int M_SURF_SKY         = 0x00000004;
+	static const int M_SURF_LADDER      = 0x00000008;
+	static const int M_SURF_NOIMPACT    = 0x00000010;
+	static const int M_SURF_NOMARKS     = 0x00000020;
+	static const int M_SURF_CASTSHADOW  = 0x00000040;
+	static const int M_SURF_NODRAW      = 0x00000080;
+	static const int M_SURF_NOLIGHTMAP  = 0x00000100;
+	static const int M_SURF_ALPHASHADOW = 0x00000200;
+	static const int M_SURF_NOSTEPS     = 0x00000400;
+	static const int M_SURF_NONSOLID    = 0x00000800;
+	static const int M_SURF_OVERBRIGHT  = 0x00001000;
+	static const int M_SURF_PAPER       = 0x00002000;
+	static const int M_SURF_WOOD        = 0x00004000;
+	static const int M_SURF_METAL       = 0x00008000;
+	static const int M_SURF_ROCK        = 0x00010000;
+	static const int M_SURF_DIRT        = 0x00020000;
+	static const int M_SURF_GRILL       = 0x00040000;
+	static const int M_SURF_GRASS       = 0x00080000;
+	static const int M_SURF_MUD         = 0x00100000;
+	static const int M_SURF_PUDDLE      = 0x00200000;
+	static const int M_SURF_GLASS       = 0x00400000;
+	static const int M_SURF_GRAVEL      = 0x00800000;
+	static const int M_SURF_SAND        = 0x01000000;
+	static const int M_SURF_FOLIAGE     = 0x02000000;
+	static const int M_SURF_SNOW        = 0x04000000;
+	static const int M_SURF_CARPET      = 0x08000000;
+	static const int M_SURF_NODLIGHT    = 0x20000000;
+	static const int M_SURF_HINT        = 0x40000000;
+
+	game_mohaa(){
+		arg = "mohaa";
+		gamePath = "main";
+		homeBasePath = ".openmohaa";
+		magic = "launch_openmohaa_base";
+		shaderPath = "scripts";
+		emitFlares = false;
+		wolfLight = false;
+		lightmapSize = 128;
+		noStyles = true;
+		keepLights = true;
+		patchSubdivisions = 16;
+		bspIdent = "2015";
+		bspVersion = 19;
+		load = LoadMOHAABSPFile;
+		write = WriteMOHAABSPFile;
+		surfaceParms = {
+			{ "default",      M_CONT_SOLID,       -1,                               0,                  -1,             C_SOLID,                              -1 },
+			{ "lightgrid",    0,                  0,                                0,                  0,              C_LIGHTGRID,                          0 },
+			{ "antiportal",   0,                  0,                                0,                  0,              C_ANTIPORTAL,                         0 },
+			{ "skip",         0,                  0,                                0,                  0,              C_SKIP,                               0 },
+			{ "origin",       M_CONT_ORIGIN,      M_CONT_SOLID,                     0,                  0,              C_ORIGIN | C_TRANSLUCENT,             C_SOLID },
+			{ "areaportal",   M_CONT_AREAPORTAL,  M_CONT_SOLID,                     0,                  0,              C_AREAPORTAL | C_TRANSLUCENT,         C_SOLID },
+			{ "trans",        M_CONT_TRANSLUCENT, 0,                                0,                  0,              C_TRANSLUCENT,                        0 },
+			{ "detail",       M_CONT_DETAIL,      0,                                0,                  0,              C_DETAIL,                             0 },
+			{ "structural",   M_CONT_STRUCTURAL,  0,                                0,                  0,              C_STRUCTURAL,                         0 },
+			{ "hint",         0,                  0,                                M_SURF_HINT,        0,              C_HINT,                               0 },
+			{ "nodraw",       0,                  0,                                M_SURF_NODRAW,      0,              C_NODRAW,                             0 },
+			{ "alphashadow",  0,                  0,                                M_SURF_ALPHASHADOW, 0,              C_ALPHASHADOW | C_TRANSLUCENT,        0 },
+			{ "lightfilter",  0,                  0,                                0,                  0,              C_LIGHTFILTER | C_TRANSLUCENT,        0 },
+			{ "nolightmap",   0,                  0,                                M_SURF_NOLIGHTMAP,  0,              C_VERTEXLIT,                          0 },
+			{ "pointlight",   0,                  0,                                M_SURF_NOLIGHTMAP,  0,              C_VERTEXLIT,                          0 },
+			{ "nonsolid",     0,                  M_CONT_SOLID,                     M_SURF_NONSOLID,    0,              0,                                    C_SOLID },
+			{ "trigger",      M_CONT_TRIGGER,     M_CONT_SOLID,                     0,                  0,              C_TRANSLUCENT,                        C_SOLID },
+			{ "water",        M_CONT_WATER,       M_CONT_SOLID,                     0,                  0,              C_LIQUID | C_TRANSLUCENT,             C_SOLID },
+			{ "slime",        M_CONT_SLIME,       M_CONT_SOLID,                     0,                  0,              C_LIQUID | C_TRANSLUCENT,             C_SOLID },
+			{ "lava",         M_CONT_LAVA,        M_CONT_SOLID,                     0,                  0,              C_LIQUID | C_TRANSLUCENT,             C_SOLID },
+			{ "playerclip",   M_CONT_PLAYERCLIP,  M_CONT_SOLID,                     0,                  0,              C_DETAIL | C_TRANSLUCENT,             C_SOLID },
+			{ "monsterclip",  M_CONT_MONSTERCLIP, M_CONT_SOLID,                     0,                  0,              C_DETAIL | C_TRANSLUCENT,             C_SOLID },
+			{ "weaponclip",   M_CONT_WEAPONCLIP,  M_CONT_SOLID,                     0,                  0,              C_DETAIL | C_TRANSLUCENT,             C_SOLID },
+			{ "vehicleclip",  M_CONT_VEHICLECLIP, M_CONT_SOLID,                     0,                  0,              C_DETAIL | C_TRANSLUCENT,             C_SOLID },
+			{ "donotenter",   M_CONT_DONOTENTER,  M_CONT_SOLID,                     0,                  0,              C_DETAIL | C_TRANSLUCENT,             C_SOLID },
+			{ "botclip",      M_CONT_BOTCLIP,     M_CONT_SOLID,                     0,                  0,              C_DETAIL | C_TRANSLUCENT,             C_SOLID },
+			{ "nodrop",       M_CONT_NODROP,      M_CONT_SOLID,                     0,                  0,              C_DETAIL | C_TRANSLUCENT,             C_SOLID },
+			{ "ladder",       M_CONT_LADDER,      0,                                M_SURF_LADDER,      0,              0,                                    0 },
+			{ "fence",        M_CONT_FENCE,       M_CONT_SOLID,                     0,                  0,              C_TRANSLUCENT,                        C_SOLID },
+			{ "fog",          M_CONT_FOG,         M_CONT_SOLID,                     0,                  0,              C_FOG | C_DETAIL | C_TRANSLUCENT,     C_SOLID },
+			{ "sky",          0,                  0,                                M_SURF_SKY,         0,              C_SKY,                                0 },
+			{ "slick",        0,                  0,                                M_SURF_SLICK,       0,              0,                                    0 },
+			{ "noimpact",     0,                  0,                                M_SURF_NOIMPACT,    0,              0,                                    0 },
+			{ "nomarks",      0,                  0,                                M_SURF_NOMARKS,     0,              C_NOMARKS,                            0 },
+			{ "nodamage",     0,                  0,                                M_SURF_NODAMAGE,    0,              0,                                    0 },
+			{ "castshadow",   0,                  0,                                M_SURF_CASTSHADOW,  0,              0,                                    0 },
+			{ "nosteps",      0,                  0,                                M_SURF_NOSTEPS,     0,              0,                                    0 },
+			{ "overbright",   0,                  0,                                M_SURF_OVERBRIGHT,  0,              0,                                    0 },
+			{ "nodlight",     0,                  0,                                M_SURF_NODLIGHT,    0,              0,                                    0 },
+			{ "paper",        0,                  0,                                M_SURF_PAPER,       0,              0,                                    0 },
+			{ "wood",         0,                  0,                                M_SURF_WOOD,        0,              0,                                    0 },
+			{ "metal",        0,                  0,                                M_SURF_METAL,       0,              0,                                    0 },
+			{ "rock",         0,                  0,                                M_SURF_ROCK,        0,              0,                                    0 },
+			{ "dirt",         0,                  0,                                M_SURF_DIRT,        0,              0,                                    0 },
+			{ "grill",        0,                  0,                                M_SURF_GRILL,       0,              0,                                    0 },
+			{ "grass",        0,                  0,                                M_SURF_GRASS,       0,              0,                                    0 },
+			{ "mud",          0,                  0,                                M_SURF_MUD,         0,              0,                                    0 },
+			{ "puddle",       0,                  0,                                M_SURF_PUDDLE,      0,              0,                                    0 },
+			{ "glass",        0,                  0,                                M_SURF_GLASS,       0,              0,                                    0 },
+			{ "gravel",       0,                  0,                                M_SURF_GRAVEL,      0,              0,                                    0 },
+			{ "sand",         0,                  0,                                M_SURF_SAND,        0,              0,                                    0 },
+			{ "foliage",      0,                  0,                                M_SURF_FOLIAGE,     0,              0,                                    0 },
+			{ "snow",         0,                  0,                                M_SURF_SNOW,        0,              0,                                    0 },
+			{ "carpet",       0,                  0,                                M_SURF_CARPET,      0,              0,                                    0 },
+		};
+		brushBevelsSurfaceFlagsMask =
+			M_SURF_NODAMAGE | M_SURF_SLICK | M_SURF_LADDER | M_SURF_NOSTEPS |
+			M_SURF_PAPER | M_SURF_WOOD | M_SURF_METAL | M_SURF_ROCK |
+			M_SURF_DIRT | M_SURF_GRILL | M_SURF_GRASS | M_SURF_MUD |
+			M_SURF_PUDDLE | M_SURF_GLASS | M_SURF_GRAVEL | M_SURF_SAND |
+			M_SURF_FOLIAGE | M_SURF_SNOW | M_SURF_CARPET;
 	}
 };
 
@@ -920,6 +1056,7 @@ struct game_ja : game_sof2
 
 
 const std::vector<game_t> g_games = { game_quake3(),
+                                      game_mohaa(),
                                       game_quakelive(),
                                       game_nexuiz(),
                                       game_xonotic(),
