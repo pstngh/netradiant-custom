@@ -68,6 +68,8 @@ struct MOHAAShader
 	int subdivisions;
 	char fenceMaskImage[MAX_QPATH];
 
+	MOHAAShader() = default;
+
 	MOHAAShader( const bspShader_t& other )
 		: surfaceFlags( other.surfaceFlags ),
 		  contentFlags( other.contentFlags ),
@@ -98,6 +100,8 @@ struct MOHAALeaf
 	int numTerrainPatches;
 	int firstStaticModel;
 	int numStaticModels;
+
+	MOHAALeaf() = default;
 
 	MOHAALeaf( const bspLeaf_t& other )
 		: cluster( other.cluster ),
@@ -132,6 +136,8 @@ struct MOHAABrushSide
 	int shaderNum;
 	int equationNum;
 
+	MOHAABrushSide() = default;
+
 	MOHAABrushSide( const bspBrushSide_t& other )
 		: planeNum( other.planeNum ),
 		  shaderNum( other.shaderNum ),
@@ -150,6 +156,8 @@ struct MOHAADrawVert
 	Vector2 lightmap;
 	Vector3 normal;
 	Color4b color;
+
+	MOHAADrawVert() = default;
 
 	MOHAADrawVert( const bspDrawVert_t& other )
 		: xyz( other.xyz ),
@@ -189,6 +197,8 @@ struct MOHAADrawSurface
 	int patchWidth;
 	int patchHeight;
 	float subdivisions;
+
+	MOHAADrawSurface() = default;
 
 	MOHAADrawSurface( const bspDrawSurface_t& other )
 		: shaderNum( other.shaderNum ),
@@ -241,50 +251,141 @@ static_assert( sizeof( MOHAABrushSide ) == 12 );
 static_assert( sizeof( MOHAADrawVert ) == 44 );
 static_assert( sizeof( MOHAADrawSurface ) == 108 );
 
+void ValidateMOHAACount( const char* name, std::size_t count, std::size_t limit ){
+	if ( count > limit ) {
+		Error(
+		    "MOHAA BSP limit exceeded for %s: %zu (maximum %zu)",
+		    name, count, limit
+		);
+	}
+}
+
+void ValidateMOHAALimits(){
+	/* Limits used by OpenMoHAA's qcommon/qfiles.h. */
+	ValidateMOHAACount( "models", bspModels.size(), 0x400 );
+	ValidateMOHAACount( "shaders", bspShaders.size(), 0x400 );
+	ValidateMOHAACount( "planes", bspPlanes.size(), 0x20000 );
+	ValidateMOHAACount( "nodes", bspNodes.size(), 0x20000 );
+	ValidateMOHAACount( "leafs", bspLeafs.size(), 0x20000 );
+	ValidateMOHAACount( "leaf surfaces", bspLeafSurfaces.size(), 0x20000 );
+	ValidateMOHAACount( "leaf brushes", bspLeafBrushes.size(), 0x40000 );
+	ValidateMOHAACount( "brushes", bspBrushes.size(), 0x8000 );
+	ValidateMOHAACount( "brush sides", bspBrushSides.size(), 0x20000 );
+	ValidateMOHAACount( "draw surfaces", bspDrawSurfaces.size(), 0x20000 );
+	ValidateMOHAACount( "draw vertices", bspDrawVerts.size(), 0x80000 );
+	ValidateMOHAACount( "draw indexes", bspDrawIndexes.size(), 0x80000 );
+	ValidateMOHAACount( "entity bytes", bspEntData.size(), 0x40000 );
+	ValidateMOHAACount( "visibility bytes", bspVisBytes.size(), 0x200000 );
+	ValidateMOHAACount( "lightmap bytes", bspLightBytes.size(), 0x800000 );
+}
+
+void ValidateMOHAAHeader( const MOHAAHeader& header, std::size_t fileSize ){
+	for ( int i = 0; i < MOHAA_HEADER_LUMPS; ++i )
+	{
+		const int offset = header.lumps[i].offset;
+		const int length = header.lumps[i].length;
+		if ( offset < 0 || length < 0 ) {
+			Error( "LoadMOHAABSPFile: negative offset or length in lump %d", i );
+		}
+
+		const std::size_t lumpOffset = static_cast<std::size_t>( offset );
+		const std::size_t lumpLength = static_cast<std::size_t>( length );
+		if ( lumpOffset > fileSize || lumpLength > fileSize - lumpOffset ) {
+			Error(
+			    "LoadMOHAABSPFile: lump %d extends past end of file "
+			    "(offset %d, length %d, file size %zu)",
+			    i, offset, length, fileSize
+			);
+		}
+		if ( i == LUMP_VISIBILITY && length != 0 && length < 2 * static_cast<int>( sizeof( int ) ) ) {
+			Error( "LoadMOHAABSPFile: visibility lump is too small (%d bytes)", length );
+		}
+	}
+}
+
 template<typename Destination, typename Source = Destination>
-void CopyMOHAALump( MOHAAHeader *header, MOHAALump lump, std::vector<Destination>& data ){
-	const int length = header->lumps[lump].length;
-	const int offset = header->lumps[lump].offset;
+void CopyMOHAALump(
+    const byte* fileData,
+    const MOHAAHeader& header,
+    MOHAALump lump,
+    std::vector<Destination>& data ){
+	const int length = header.lumps[lump].length;
+	const int offset = header.lumps[lump].offset;
 	if ( length <= 0 ) {
 		data.clear();
 		return;
 	}
-	if ( length % sizeof( Source ) != 0 ) {
+	if ( length % static_cast<int>( sizeof( Source ) ) != 0 ) {
 		Error( "LoadMOHAABSPFile: odd lump size (%d) in lump %d", length, lump );
 	}
-	const Source *begin = reinterpret_cast<const Source*>( reinterpret_cast<const byte*>( header ) + offset );
-	data = { begin, begin + length / sizeof( Source ) };
+
+	const std::size_t count = static_cast<std::size_t>( length ) / sizeof( Source );
+	data.clear();
+	data.reserve( count );
+	for ( std::size_t i = 0; i < count; ++i )
+	{
+		Source source{};
+		std::memcpy(
+		    static_cast<void*>( &source ),
+		    fileData + offset + i * sizeof( Source ),
+		    sizeof( Source )
+		);
+		data.push_back( static_cast<Destination>( source ) );
+	}
 }
 }
 
 void LoadMOHAABSPFile( const char *filename ){
 	MemBuffer file = LoadFile( filename );
-	MOHAAHeader *header = file.data();
+	if ( file.size() < sizeof( MOHAAHeader ) ) {
+		Error(
+		    "%s is too small to contain a MOHAA BSP header "
+		    "(%zu bytes, expected at least %zu)",
+		    filename, file.size(), sizeof( MOHAAHeader )
+		);
+	}
 
-	SwapBlock( reinterpret_cast<int*>( reinterpret_cast<byte*>( header ) + 4 ), sizeof( *header ) - 4 );
+	const byte* fileData = file.data();
+	MOHAAHeader header{};
+	std::memcpy( &header, fileData, sizeof( header ) );
 
-	if ( !force && std::memcmp( header->ident, g_game->bspIdent, 4 ) != 0 ) {
+	SwapBlock( reinterpret_cast<int*>( reinterpret_cast<byte*>( &header ) + 4 ), sizeof( header ) - 4 );
+
+	if ( !force && std::memcmp( header.ident, g_game->bspIdent, 4 ) != 0 ) {
 		Error( "%s is not a MOHAA 2015 BSP file", filename );
 	}
-	if ( !force && header->version != g_game->bspVersion ) {
-		Error( "%s is version %d, not %d", filename, header->version, g_game->bspVersion );
+	if ( !force && header.version != g_game->bspVersion ) {
+		Error( "%s is version %d, not %d", filename, header.version, g_game->bspVersion );
 	}
 
-	CopyMOHAALump<bspShader_t, MOHAAShader>( header, LUMP_SHADERS, bspShaders );
-	CopyMOHAALump( header, LUMP_MODELS, bspModels );
-	CopyMOHAALump( header, LUMP_PLANES, bspPlanes );
-	CopyMOHAALump<bspLeaf_t, MOHAALeaf>( header, LUMP_LEAFS, bspLeafs );
-	CopyMOHAALump( header, LUMP_NODES, bspNodes );
-	CopyMOHAALump( header, LUMP_LEAFSURFACES, bspLeafSurfaces );
-	CopyMOHAALump( header, LUMP_LEAFBRUSHES, bspLeafBrushes );
-	CopyMOHAALump( header, LUMP_BRUSHES, bspBrushes );
-	CopyMOHAALump<bspBrushSide_t, MOHAABrushSide>( header, LUMP_BRUSHSIDES, bspBrushSides );
-	CopyMOHAALump<bspDrawVert_t, MOHAADrawVert>( header, LUMP_DRAWVERTS, bspDrawVerts );
-	CopyMOHAALump<bspDrawSurface_t, MOHAADrawSurface>( header, LUMP_SURFACES, bspDrawSurfaces );
-	CopyMOHAALump( header, LUMP_DRAWINDEXES, bspDrawIndexes );
-	CopyMOHAALump( header, LUMP_VISIBILITY, bspVisBytes );
-	CopyMOHAALump( header, LUMP_LIGHTMAPS, bspLightBytes );
-	CopyMOHAALump( header, LUMP_ENTITIES, bspEntData );
+	ValidateMOHAAHeader( header, file.size() );
+
+	CopyMOHAALump<bspShader_t, MOHAAShader>( fileData, header, LUMP_SHADERS, bspShaders );
+	CopyMOHAALump( fileData, header, LUMP_MODELS, bspModels );
+	CopyMOHAALump( fileData, header, LUMP_PLANES, bspPlanes );
+	CopyMOHAALump<bspLeaf_t, MOHAALeaf>( fileData, header, LUMP_LEAFS, bspLeafs );
+	CopyMOHAALump( fileData, header, LUMP_NODES, bspNodes );
+	CopyMOHAALump( fileData, header, LUMP_LEAFSURFACES, bspLeafSurfaces );
+	CopyMOHAALump( fileData, header, LUMP_LEAFBRUSHES, bspLeafBrushes );
+	CopyMOHAALump( fileData, header, LUMP_BRUSHES, bspBrushes );
+	CopyMOHAALump<bspBrushSide_t, MOHAABrushSide>( fileData, header, LUMP_BRUSHSIDES, bspBrushSides );
+	CopyMOHAALump<bspDrawVert_t, MOHAADrawVert>( fileData, header, LUMP_DRAWVERTS, bspDrawVerts );
+	CopyMOHAALump<bspDrawSurface_t, MOHAADrawSurface>( fileData, header, LUMP_SURFACES, bspDrawSurfaces );
+	CopyMOHAALump( fileData, header, LUMP_DRAWINDEXES, bspDrawIndexes );
+	CopyMOHAALump( fileData, header, LUMP_VISIBILITY, bspVisBytes );
+	CopyMOHAALump( fileData, header, LUMP_LIGHTMAPS, bspLightBytes );
+	CopyMOHAALump( fileData, header, LUMP_ENTITIES, bspEntData );
+
+	for ( const bspShader_t& shader : bspShaders )
+	{
+		if ( std::memchr( shader.shader, '\0', sizeof( shader.shader ) ) == nullptr ) {
+			Error( "LoadMOHAABSPFile: shader name is not null terminated" );
+		}
+	}
+	if ( !bspEntData.empty() && bspEntData.back() != '\0' ) {
+		Error( "LoadMOHAABSPFile: entity lump is not null terminated" );
+	}
+	ValidateMOHAALimits();
 
 	bspFogs.clear();
 	bspGridPoints.clear();
@@ -292,6 +393,8 @@ void LoadMOHAABSPFile( const char *filename ){
 }
 
 void WriteMOHAABSPFile( const char *filename ){
+	ValidateMOHAALimits();
+
 	MOHAAHeader header{};
 	std::memcpy( header.ident, g_game->bspIdent, 4 );
 	header.version = LittleLong( g_game->bspVersion );

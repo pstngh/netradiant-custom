@@ -46,6 +46,7 @@
 namespace
 {
 constexpr double c_mohaaTerrainGrid = 64.0;
+constexpr std::size_t c_maxTerrainDimension = 4096;
 constexpr std::size_t c_maxTerrainVertices = 1024 * 1024;
 
 using TokenLine = std::vector<CopiedString>;
@@ -400,7 +401,9 @@ public:
 		RETURN_FALSE_IF_FAIL( Tokeniser_getSize( tokeniser, m_width ) );
 		RETURN_FALSE_IF_FAIL( Tokeniser_getSize( tokeniser, m_height ) );
 		RETURN_FALSE_IF_FAIL( Tokeniser_getInteger( tokeniser, m_flags ) );
-		if ( m_width < 2 || m_height < 2 || m_width > c_maxTerrainVertices / m_height ) {
+		if ( m_width < 2 || m_height < 2 ||
+		     m_width > c_maxTerrainDimension || m_height > c_maxTerrainDimension ||
+		     m_width > c_maxTerrainVertices / m_height ) {
 			globalErrorStream() << "MOHAA terrain has invalid dimensions " << m_width << 'x' << m_height << '\n';
 			return false;
 		}
@@ -412,6 +415,10 @@ public:
 		RETURN_FALSE_IF_FAIL( Tokeniser_getDouble( tokeniser, originX ) );
 		RETURN_FALSE_IF_FAIL( Tokeniser_getDouble( tokeniser, originY ) );
 		RETURN_FALSE_IF_FAIL( Tokeniser_getDouble( tokeniser, originZ ) );
+		if ( !std::isfinite( originX ) || !std::isfinite( originY ) || !std::isfinite( originZ ) ) {
+			globalErrorStream() << "MOHAA terrain has a non-finite origin\n";
+			return false;
+		}
 		m_origin = Vector3( originX, originY, originZ );
 
 		tokeniser.nextLine();
@@ -448,8 +455,12 @@ public:
 			for ( std::size_t x = 0; x < m_width; ++x )
 			{
 				tokeniser.nextLine();
-				float height;
+				float height = 0;
 				RETURN_FALSE_IF_FAIL( Tokeniser_getFloat( tokeniser, height ) );
+				if ( !std::isfinite( height ) ) {
+					globalErrorStream() << "MOHAA terrain has a non-finite vertex height\n";
+					return false;
+				}
 
 				TerrainVertex vertex;
 				vertex.m_vertex = Vector3(

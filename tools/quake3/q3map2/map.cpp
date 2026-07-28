@@ -1323,6 +1323,11 @@ static void ParseMOHAATerrain(
 	terrain.origin.y() = atof( token );
 	GetToken( false );
 	terrain.origin.z() = atof( token );
+	if ( !std::isfinite( terrain.origin.x() ) ||
+	     !std::isfinite( terrain.origin.y() ) ||
+	     !std::isfinite( terrain.origin.z() ) ) {
+		Error( "ParseMOHAATerrain: non-finite origin" );
+	}
 
 	MatchToken( "{" );
 	for (;; )
@@ -1362,6 +1367,9 @@ static void ParseMOHAATerrain(
 		{
 			GetToken( true );
 			const float height = atof( token );
+			if ( !std::isfinite( height ) ) {
+				Error( "ParseMOHAATerrain: non-finite height at %d,%d", x, y );
+			}
 			value_minimize( minimumHeight, height );
 			terrain.vertices.emplace_back(
 			    terrain.origin.x() + x * 64.0f,

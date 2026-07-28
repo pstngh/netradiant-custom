@@ -287,10 +287,6 @@ static bool packBSPOnly(
     const std::vector<CopiedString>& bspList,
     const char* output,
     const int compLevel ){
-	if ( FileExists( output ) && remove( output ) != 0 ) {
-		Error( "Unable to replace existing PK3 \"%s\"", output );
-	}
-
 	struct Companion
 	{
 		const char* extension;
@@ -303,17 +299,49 @@ static bool packBSPOnly(
 	};
 
 	StringOutputStream stream( 256 );
+	const CopiedString temporary( stream( output, ".tmp" ) );
+
+	/* Validate every input before touching an existing deployable archive. */
+	std::vector<CopiedString> mapNames;
 	for ( const CopiedString& bsp : bspList )
 	{
 		if ( !FileExists( bsp.c_str() ) ) {
 			Sys_FPrintf( SYS_ERR, "BSP does not exist: %s\n", bsp.c_str() );
 			return false;
 		}
+		if ( path_equal( bsp.c_str(), output ) || path_equal( bsp.c_str(), temporary.c_str() ) ) {
+			Sys_FPrintf( SYS_ERR, "PK3 output path conflicts with BSP input: %s\n", bsp.c_str() );
+			return false;
+		}
 
 		const CopiedString mapName( PathFilename( bsp.c_str() ) );
+		for ( const CopiedString& existing : mapNames )
+		{
+			if ( striEqual( existing, mapName ) ) {
+				Sys_FPrintf(
+				    SYS_ERR,
+				    "Multiple BSP inputs would create the same archive path: maps/%s.bsp\n",
+				    mapName.c_str()
+				);
+				return false;
+			}
+		}
+		mapNames.push_back( mapName );
+	}
+
+	if ( FileExists( temporary.c_str() ) && remove( temporary.c_str() ) != 0 ) {
+		Sys_FPrintf( SYS_ERR, "Unable to remove stale temporary PK3 \"%s\"\n", temporary.c_str() );
+		return false;
+	}
+
+	for ( std::size_t i = 0; i < bspList.size(); ++i )
+	{
+		const CopiedString& bsp = bspList[i];
+		const CopiedString& mapName = mapNames[i];
 		const CopiedString bspArchiveName( stream( "maps/", mapName, ".bsp" ) );
-		if ( !vfsPackFile_Absolute_Path( bsp.c_str(), bspArchiveName.c_str(), output, compLevel ) ) {
-			Sys_FPrintf( SYS_ERR, "Unable to add %s to %s\n", bsp.c_str(), output );
+		if ( !vfsPackFile_Absolute_Path( bsp.c_str(), bspArchiveName.c_str(), temporary.c_str(), compLevel ) ) {
+			Sys_FPrintf( SYS_ERR, "Unable to add %s to %s\n", bsp.c_str(), temporary.c_str() );
+			remove( temporary.c_str() );
 			return false;
 		}
 		Sys_Printf( "++%s\n", bspArchiveName.c_str() );
@@ -328,11 +356,47 @@ static bool packBSPOnly(
 			const CopiedString archiveName(
 			    stream( companion.archiveDirectory, mapName, companion.extension )
 			);
-			if ( !vfsPackFile_Absolute_Path( source.c_str(), archiveName.c_str(), output, compLevel ) ) {
-				Sys_FPrintf( SYS_ERR, "Unable to add %s to %s\n", source.c_str(), output );
+			if ( !vfsPackFile_Absolute_Path( source.c_str(), archiveName.c_str(), temporary.c_str(), compLevel ) ) {
+				Sys_FPrintf( SYS_ERR, "Unable to add %s to %s\n", source.c_str(), temporary.c_str() );
+				remove( temporary.c_str() );
 				return false;
 			}
 			Sys_Printf( "++%s\n", archiveName.c_str() );
+		}
+	}
+
+	/*
+	   POSIX rename replaces the destination atomically.  Windows rename does
+	   not, so fall back to a recoverable backup swap there.
+	 */
+	if ( rename( temporary.c_str(), output ) != 0 ) {
+		if ( !FileExists( output ) ) {
+			Sys_FPrintf( SYS_ERR, "Unable to move completed PK3 to \"%s\"\n", output );
+			remove( temporary.c_str() );
+			return false;
+		}
+
+		const CopiedString backup( stream( output, ".bak" ) );
+		if ( FileExists( backup.c_str() ) && remove( backup.c_str() ) != 0 ) {
+			Sys_FPrintf( SYS_ERR, "Unable to remove stale PK3 backup \"%s\"\n", backup.c_str() );
+			remove( temporary.c_str() );
+			return false;
+		}
+		if ( rename( output, backup.c_str() ) != 0 ) {
+			Sys_FPrintf( SYS_ERR, "Unable to back up existing PK3 \"%s\"\n", output );
+			remove( temporary.c_str() );
+			return false;
+		}
+		if ( rename( temporary.c_str(), output ) != 0 ) {
+			Sys_FPrintf( SYS_ERR, "Unable to replace existing PK3 \"%s\"; restoring backup\n", output );
+			if ( rename( backup.c_str(), output ) != 0 ) {
+				Sys_FPrintf( SYS_ERR, "Unable to restore PK3 backup \"%s\"\n", backup.c_str() );
+			}
+			remove( temporary.c_str() );
+			return false;
+		}
+		if ( remove( backup.c_str() ) != 0 ) {
+			Sys_FPrintf( SYS_WRN, "WARNING: unable to remove PK3 backup \"%s\"\n", backup.c_str() );
 		}
 	}
 

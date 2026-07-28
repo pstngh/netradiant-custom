@@ -39,11 +39,15 @@ PK3 builds are written to the selected game directory as
 They contain `maps/<mapname>.bsp` and also include same-name `.scr`, `.aas`,
 and `.arena` files found beside the BSP. Installed stock data and assets from
 other PK3s remain external, avoiding a large duplicate copy of the game data.
+PK3 replacement is transactional: inputs are validated and a temporary archive
+is completed before an existing deployable archive is replaced.
 
 The compiler writes the MOHAA `2015` header and version 19 lumps accepted by
 OpenMoHAA. `terrainDef` grids are converted to textured, collidable detail
 geometry during compilation. This deliberately favors compatibility over the
-original engine's specialized terrain LOD lump.
+original engine's specialized terrain LOD lump. The loader rejects truncated,
+out-of-bounds, or over-limit MOHAA BSP data with an error instead of reading
+past the file buffer or emitting a BSP beyond OpenMoHAA's documented limits.
 
 ## Deliberate limitations
 

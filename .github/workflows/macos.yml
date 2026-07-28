@@ -69,6 +69,8 @@ jobs:
           terrain_map="$smoke_root/main/maps/mohaa_terrain.map"
           terrain_bsp="$smoke_root/main/maps/mohaa_terrain.bsp"
           pk3="$smoke_root/main/mohaa_smoke.pk3"
+          truncated_bsp="$smoke_root/main/maps/mohaa_truncated.bsp"
+          invalid_lump_bsp="$smoke_root/main/maps/mohaa_invalid_lump.bsp"
           q3map2="install/q3map2.arm64"
 
           mkdir -p "$smoke_root/main/maps" "$smoke_root/main/scripts"
@@ -84,9 +86,44 @@ jobs:
 
           "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis -fast "$bsp"
           "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -light -fast -samples 1 "$bsp"
+
+          dd if="$bsp" of="$truncated_bsp" bs=1 count=32 status=none
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis "$truncated_bsp" >"$RUNNER_TEMP/truncated.log" 2>&1; then
+            echo "q3map2 unexpectedly accepted a truncated MOHAA BSP"
+            exit 1
+          fi
+          grep -q "too small to contain a MOHAA BSP header" "$RUNNER_TEMP/truncated.log"
+
+          cp "$bsp" "$invalid_lump_bsp"
+          printf '\377\377\377\177' | dd of="$invalid_lump_bsp" bs=1 seek=12 conv=notrunc status=none
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -vis "$invalid_lump_bsp" >"$RUNNER_TEMP/invalid-lump.log" 2>&1; then
+            echo "q3map2 unexpectedly accepted an out-of-bounds MOHAA BSP lump"
+            exit 1
+          fi
+          grep -q "extends past end of file" "$RUNNER_TEMP/invalid-lump.log"
+
+          printf 'previous known-good archive\n' >"$pk3"
+          previous_pk3_hash="$(shasum -a 256 "$pk3" | cut -d' ' -f1)"
+          if "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -pk3 -bsp-only -output "$pk3" "$smoke_root/main/maps/missing.bsp"; then
+            echo "q3map2 unexpectedly packaged a missing BSP"
+            exit 1
+          fi
+          test "$(shasum -a 256 "$pk3" | cut -d' ' -f1)" = "$previous_pk3_hash"
+
+          printf 'level script\n' >"${bsp%.bsp}.scr"
+          printf 'navigation data\n' >"${bsp%.bsp}.aas"
+          printf 'arena metadata\n' >"${bsp%.bsp}.arena"
           "$q3map2" -game mohaa -fs_basepath "$smoke_root" -fs_game main -pk3 -bsp-only -output "$pk3" "$bsp"
 
+          unzip -t "$pk3"
           unzip -Z1 "$pk3" | grep -qx "maps/mohaa_smoke.bsp"
+          unzip -Z1 "$pk3" | grep -qx "maps/mohaa_smoke.scr"
+          unzip -Z1 "$pk3" | grep -qx "maps/mohaa_smoke.aas"
+          unzip -Z1 "$pk3" | grep -qx "scripts/mohaa_smoke.arena"
+          unzip -p "$pk3" maps/mohaa_smoke.bsp >"$RUNNER_TEMP/packed.bsp"
+          cmp "$bsp" "$RUNNER_TEMP/packed.bsp"
+          test ! -e "$pk3.tmp"
+          test ! -e "$pk3.bak"
 
       - name: Package and validate app bundle
         shell: bash
